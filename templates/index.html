@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Игра "Пятнашки"</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" href="{{ url_for('static', filename='img/logo.png') }}" type="image/png">
+</head>
+<body>
+    <div class="main-container">
+        <header class="main-header">
+            <h1>Пятнашки</h1>
+            <div id="user-status" class="hidden">
+                <span id="welcome-message"></span>
+                <button id="logout-btn" class="nav-btn">Выйти</button>
+            </div>
+            <div id="nav-menu" class="nav-buttons hidden">
+                <button class="nav-btn active" data-screen="settings">
+                    <i class="fas fa-play"></i> Играть
+                </button>
+                <button class="nav-btn" data-screen="leaderboard">
+                    <i class="fas fa-trophy"></i> Рейтинги
+                </button>
+            </div>
+        </header>
+
+        <main id="app-container">
+            <div id="auth-screen" class="screen active">
+                <div id="login-view">
+                    <h2>Вход в игру</h2>
+                    <form class="auth-form" id="login-form">
+                        <input type="text" id="login-username" placeholder="Имя пользователя" required>
+                        <input type="password" id="login-password" placeholder="Пароль" required>
+                        <button type="submit" id="login-btn" class="btn btn-primary">Войти</button>
+                    </form>
+                    <div class="auth-toggle">
+                        <p class="auth-prompt">Нет аккаунта? <a href="#" id="show-register-link" class="auth-link">Регистрация</a></p>
+                    </div>
+                    <hr>
+                    <button id="guest-btn" class="btn btn-secondary">
+                        <i class="fas fa-user-secret"></i> Играть как гость
+                    </button>
+                </div>
+
+                <div id="register-view" class="hidden">
+                    <h2>Регистрация</h2>
+                    <form class="auth-form" id="register-form">
+                        <input type="text" id="register-username" placeholder="Имя пользователя" required>
+                        <input type="password" id="register-password" placeholder="Пароль" required>
+                        <button type="submit" id="register-btn" class="btn btn-primary">Создать аккаунт</button>
+                    </form>
+                    <div class="auth-toggle">
+                        <p class="auth-prompt">Уже есть аккаунт? <a href="#" id="show-login-link" class="auth-link">Войти</a></p>
+                    </div>
+                </div>
+
+                <div id="auth-error" class="error-message"></div>
+            </div>
+
+            <div id="settings-screen" class="screen">
+                <h2>Настройки игры</h2>
+                <div class="settings-grid">
+                    <div class="setting-item daily-challenge-toggle">
+                        <input type="checkbox" id="daily-challenge-check">
+                        <label for="daily-challenge-check" class="daily-label">
+                            <i class="fas fa-calendar-day"></i>
+                            <span>Ежедневный челлендж</span>
+                        </label>
+                    </div>
+                    <div id="regular-settings">
+                        <div class="setting-item">
+                            <label class="setting-label">Режим игры</label>
+                            <div class="mode-selector">
+                                <div class="mode-option">
+                                    <input type="radio" id="mode-numbers" name="game-mode" value="NUMBERS" checked>
+                                    <label for="mode-numbers" class="mode-label"><i class="fas fa-sort-numeric-up"></i><span>Числа</span></label>
+                                </div>
+                                <div class="mode-option">
+                                    <input type="radio" id="mode-image" name="game-mode" value="IMAGE">
+                                    <label for="mode-image" class="mode-label"><i class="fas fa-image"></i><span>Картинка</span></label>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="image-selection" class="hidden">
+                            <p>Выберите картинку:</p>
+                            <div class="image-previews">
+                                <img src="{{ url_for('static', filename='img/cat.jpg') }}" alt="Cat" class="preview-img" data-src="{{ url_for('static', filename='img/cat.jpg') }}">
+                                <img src="{{ url_for('static', filename='img/earth.jpg') }}" alt="Earth" class="preview-img" data-src="{{ url_for('static', filename='img/earth.jpg') }}">
+                                <img src="{{ url_for('static', filename='img/monalisa.jpg') }}" alt="Mona Lisa" class="preview-img" data-src="{{ url_for('static', filename='img/monalisa.jpg') }}">
+                            </div>
+                            <label for="image-upload" class="btn btn-secondary"><i class="fas fa-upload"></i> Загрузить свою</label>
+                            <input type="file" id="image-upload" class="hidden" accept="image/*">
+                            <p id="custom-image-name"></p>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="board-size-select">Размер поля</label>
+                            <div class="custom-select-wrapper">
+                                <select id="board-size">
+                                    <option value="3">3x3 (Лёгкий)</option>
+                                    <option value="4" selected>4x4 (Классика)</option>
+                                    <option value="5">5x5 (Сложный)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="difficulty-select">Сложность</label>
+                            <div class="custom-select-wrapper">
+                                <select id="difficulty">
+                                    <option value="20">Легко</option>
+                                    <option value="50" selected>Нормально</option>
+                                    <option value="150">Сложно</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <button id="start-btn" class="btn btn-primary btn-large"><i class="fas fa-rocket"></i> Начать игру</button>
+            </div>
+
+            <div id="game-screen" class="screen">
+                <div id="active-game-view">
+                    <div class="info-panel">
+                        <div><i class="fas fa-shoe-prints"></i> Ходы: <span id="moves-counter">0</span></div>
+                        <div><i class="fas fa-hourglass-half"></i> Осталось: <span id="timer">00:00</span></div>
+                    </div>
+                    <div id="game-board-container">
+                        <div id="game-board"></div>
+                    </div>
+                    <div id="game-controls" class="controls">
+                        <button id="hint-btn" class="btn btn-secondary"><i class="fas fa-lightbulb"></i> Подсказка (H)</button>
+                        <button id="undo-btn" class="btn btn-secondary"><i class="fas fa-undo"></i> Отменить (U)</button>
+                        <button id="redo-btn" class="btn btn-secondary"><i class="fas fa-redo"></i> Вернуть</button>
+                        <button id="abandon-btn" class="btn btn-danger"><i class="fas fa-flag"></i> Сдаться</button>
+                    </div>
+                </div>
+
+                <div id="win-overlay" class="hidden">
+                    <h2>Победа!</h2>
+                    <div id="win-stars" class="stars"></div>
+                    <p>Ваш результат:</p> 
+                    <p><strong><span id="win-moves"></span> ходов</strong> за <strong><span id="win-time"></span></strong></p>
+                    <button id="play-again-btn" class="btn btn-primary"><i class="fas fa-redo"></i> Играть снова</button>
+                </div>
+            </div>
+
+            <div id="leaderboard-screen" class="screen">
+                <h2>Рейтинги</h2>
+                <div class="leaderboard-filters">
+                    <div class="custom-select-wrapper">
+                        <select id="filter-size">
+                            <option value="0">Все размеры</option><option value="3">3x3</option><option value="4">4x4</option><option value="5">5x5</option>
+                        </select>
+                    </div>
+                    <div class="custom-select-wrapper">
+                        <select id="filter-difficulty">
+                            <option value="0">Все сложности</option><option value="20">Легко</option><option value="50">Нормально</option><option value="150">Сложно</option>
+                        </select>
+                    </div>
+                    <button id="apply-filters-btn" class="btn btn-primary"><i class="fas fa-filter"></i> Применить</button>
+                </div>
+                <div id="leaderboard-tables"></div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
