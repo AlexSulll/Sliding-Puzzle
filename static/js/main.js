@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
         handleRegister: async (event) => { event.preventDefault(); const username = document.getElementById('register-username').value.trim(); const password = document.getElementById('register-password').value; if (!username || !password) return; const response = await api.register(username, auth.hashPassword(password)); if (response && response.success) auth.onLoginSuccess(response.user); },
         handleGuest: async () => { const response = await api.loginAsGuest(); if (response && response.success) auth.onLoginSuccess(response.user); },
         handleLogout: async () => { await api.logout(); state.currentUser = null; ui.updateLoginState(); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); },
-        onLoginSuccess: (userData) => { state.currentUser = userData; ui.updateLoginState(); ui.showScreen('settings'); DOMElements.authError.textContent = ''; document.querySelectorAll('#auth-screen form').forEach(f => f.reset()); },
+        onLoginSuccess: (userData) => { state.currentUser = userData; ui.loadDefaultImages(); ui.updateLoginState(); ui.showScreen('settings'); DOMElements.authError.textContent = ''; document.querySelectorAll('#auth-screen form').forEach(f => f.reset()); },
         checkStatus: async () => { const response = await api.getStatus(); if (response && response.isLoggedIn) { auth.onLoginSuccess(response.user); } else { ui.showScreen('auth'); } }
     };
 
@@ -77,8 +77,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (gameState && gameState.active_session_found) {
                 if (confirm('У вас есть незаконченная игра. Хотите продолжить?')) {
-                    DOMElements.activeGameView.classList.remove('hidden');
-                    DOMElements.winOverlay.classList.add('hidden');
                     ui.showScreen('game');
                     ui.render(gameState);
                     timer.start(gameState.startTime, gameState.boardSize);
@@ -88,8 +86,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (gameState && gameState.sessionId) {
-                DOMElements.activeGameView.classList.remove('hidden');
-                DOMElements.winOverlay.classList.add('hidden');
                 ui.showScreen('game');
                 ui.render(gameState);
                 timer.start(gameState.startTime, size);
@@ -105,6 +101,13 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // === UI Module: Handles all DOM manipulation ===
     const ui = {
+        loadDefaultImages: () => {
+            DOMElements.previewImages.forEach(img => {
+                if (img.dataset.src && !img.src) {
+                    img.src = img.dataset.src;
+                }
+            });
+        },
         showScreen: (screenName) => {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             const screen = document.getElementById(`${screenName}-screen`); if(screen) screen.classList.add('active');
@@ -158,7 +161,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(!rows || rows.length === 0) { const p = document.createElement('p'); p.textContent = 'Для выбранных фильтров нет данных.'; container.appendChild(p); return container; }
                 const table = document.createElement('table'); const thead = document.createElement('thead'); const tbody = document.createElement('tbody');
                 thead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
-                rows.forEach(row => { const tr = document.createElement('tr'); tr.innerHTML = columns.map(col => `<td>${row[col] !== undefined ? row[col] : ''}</td>`).join(''); tbody.appendChild(tr); });
+                rows.forEach(row => { 
+                    const tr = document.createElement('tr'); 
+                    tr.innerHTML = columns.map(col => {
+                        let content = row[col] !== undefined ? row[col] : '';
+                        if (col === 'total_stars') {
+                            content = `<span class="star-count">${content}</span> <i class="fas fa-star gold-star"></i>`;
+                        }
+                        return `<td>${content}</td>`;
+                    }).join(''); 
+                    tbody.appendChild(tr); 
+                });
                 table.appendChild(thead); table.appendChild(tbody); container.appendChild(table);
                 return container;
             };

@@ -6,7 +6,7 @@
     <title>Игра "Пятнашки"</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="icon" href="{{ url_for('static', filename='img/logo.png') }}" type="image/png">
+    <link rel="icon" href="{{ url_for('static', filename='../static/css/logo.png') }}" type="image/png">
 </head>
 <body>
     <div class="main-container">
@@ -28,6 +28,7 @@
 
         <main id="app-container">
             <div id="auth-screen" class="screen active">
+                
                 <div id="login-view">
                     <h2>Вход в игру</h2>
                     <form class="auth-form" id="login-form">
@@ -71,7 +72,6 @@
                     </div>
                     <div id="regular-settings">
                         <div class="setting-item">
-                            <label class="setting-label">Режим игры</label>
                             <div class="mode-selector">
                                 <div class="mode-option">
                                     <input type="radio" id="mode-numbers" name="game-mode" value="NUMBERS" checked>
@@ -86,9 +86,9 @@
                         <div id="image-selection" class="hidden">
                             <p>Выберите картинку:</p>
                             <div class="image-previews">
-                                <img src="{{ url_for('static', filename='img/cat.jpg') }}" alt="Cat" class="preview-img" data-src="{{ url_for('static', filename='img/cat.jpg') }}">
-                                <img src="{{ url_for('static', filename='img/earth.jpg') }}" alt="Earth" class="preview-img" data-src="{{ url_for('static', filename='img/earth.jpg') }}">
-                                <img src="{{ url_for('static', filename='img/monalisa.jpg') }}" alt="Mona Lisa" class="preview-img" data-src="{{ url_for('static', filename='img/monalisa.jpg') }}">
+                                <img data-src="{{ url_for('static', filename='img/cat.jpg') }}" alt="Cat" class="preview-img">
+                                <img data-src="{{ url_for('static', filename='img/earth.jpg') }}" alt="Earth" class="preview-img">
+                                <img data-src="{{ url_for('static', filename='img/monalisa.jpg') }}" alt="Mona Lisa" class="preview-img">
                             </div>
                             <label for="image-upload" class="btn btn-secondary"><i class="fas fa-upload"></i> Загрузить свою</label>
                             <input type="file" id="image-upload" class="hidden" accept="image/*">
@@ -96,22 +96,23 @@
                         </div>
                         
                         <div class="form-group">
-                            <label for="board-size-select">Размер поля</label>
+                            <label for="board-size">Размер поля</label>
                             <div class="custom-select-wrapper">
                                 <select id="board-size">
-                                    <option value="3">3x3 (Лёгкий)</option>
-                                    <option value="4" selected>4x4 (Классика)</option>
-                                    <option value="5">5x5 (Сложный)</option>
+                                    <option value="3">3x3</option>
+                                    <option value="4" selected>4x4</option>
+                                    <option value="5">5x5</option>
+                                    <option value="6">6x6</option>
                                 </select>
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="difficulty-select">Сложность</label>
+                            <label for="difficulty">Сложность</label>
                             <div class="custom-select-wrapper">
                                 <select id="difficulty">
-                                    <option value="20">Легко</option>
-                                    <option value="50" selected>Нормально</option>
-                                    <option value="150">Сложно</option>
+                                    <option value="50">Легко</option>
+                                    <option value="200" selected>Нормально</option>
+                                    <option value="1000">Сложно</option>
                                 </select>
                             </div>
                         </div>
@@ -151,17 +152,25 @@
                 <div class="leaderboard-filters">
                     <div class="custom-select-wrapper">
                         <select id="filter-size">
-                            <option value="0">Все размеры</option><option value="3">3x3</option><option value="4">4x4</option><option value="5">5x5</option>
+                            <option value="0">Все размеры</option>
+                            <option value="3">3x3</option>
+                            <option value="4">4x4</option>
+                            <option value="5">5x5</option>
+                            <option value="6">6x6</option>
                         </select>
                     </div>
                     <div class="custom-select-wrapper">
                         <select id="filter-difficulty">
-                            <option value="0">Все сложности</option><option value="20">Легко</option><option value="50">Нормально</option><option value="150">Сложно</option>
+                            <option value="0">Все сложности</option>
+                            <option value="50">Легко</option>
+                            <option value="200">Нормально</option>
+                            <option value="1000">Сложно</option>
                         </select>
                     </div>
                     <button id="apply-filters-btn" class="btn btn-primary"><i class="fas fa-filter"></i> Применить</button>
                 </div>
-                <div id="leaderboard-tables"></div>
+                <div id="leaderboard-tables">
+                    </div>
             </div>
         </main>
     </div>

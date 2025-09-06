@@ -154,42 +154,50 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             l_size := l_daily.BOARD_SIZE;
             l_shuffles := l_daily.SHUFFLE_MOVES;
             l_target_state := l_daily.TARGET_STATE;
-            l_board := state_to_table(l_target_state);
         ELSE
+            l_target_state := '';
             FOR i IN 1..(l_size*l_size - 1) LOOP
-                l_board(i) := i;
+                l_target_state := l_target_state || i || ',';
             END LOOP;
-            l_board(l_size*l_size) := 0;
-            l_target_state := table_to_state(l_board);
+            l_target_state := l_target_state || '0';
         END IF;
+        
+        -- НОВАЯ ЛОГИКА: Цикл для гарантии, что начальное состояние не равно целевому
+        LOOP
+            l_board := state_to_table(l_target_state);
+            l_empty_idx := l_size*l_size;
 
-        l_empty_idx := l_size*l_size;
-        FOR i IN 1..l_shuffles LOOP
-            DECLARE
-                l_possible_moves GAME_MANAGER_PKG.t_board;
-                l_move_to_idx PLS_INTEGER;
-                l_rand_move PLS_INTEGER;
-                l_temp NUMBER;
-                k PLS_INTEGER := 1;
-            BEGIN
-                IF MOD(l_empty_idx - 1, l_size) > 0 THEN l_possible_moves(k) := l_empty_idx - 1; k := k + 1; END IF;
-                IF MOD(l_empty_idx - 1, l_size) < l_size - 1 THEN l_possible_moves(k) := l_empty_idx + 1; k := k + 1; END IF;
-                IF l_empty_idx - l_size > 0 THEN l_possible_moves(k) := l_empty_idx - l_size; k := k + 1; END IF;
-                IF l_empty_idx + l_size <= l_size*l_size THEN l_possible_moves(k) := l_empty_idx + l_size; END IF;
-
-                l_rand_move := TRUNC(DBMS_RANDOM.VALUE(1, l_possible_moves.COUNT + 1));
-                l_move_to_idx := l_possible_moves(l_rand_move);
-                l_temp := l_board(l_move_to_idx);
-                l_board(l_move_to_idx) := l_board(l_empty_idx);
-                l_board(l_empty_idx) := l_temp;
-                l_empty_idx := l_move_to_idx;
-            END;
+            FOR i IN 1..l_shuffles LOOP
+                DECLARE
+                    l_possible_moves GAME_MANAGER_PKG.t_board;
+                    l_move_to_idx PLS_INTEGER;
+                    l_rand_move PLS_INTEGER;
+                    l_temp NUMBER;
+                    k PLS_INTEGER := 1;
+                BEGIN
+                    IF MOD(l_empty_idx - 1, l_size) > 0 THEN l_possible_moves(k) := l_empty_idx - 1; k := k + 1; END IF;
+                    IF MOD(l_empty_idx - 1, l_size) < l_size - 1 THEN l_possible_moves(k) := l_empty_idx + 1; k := k + 1; END IF;
+                    IF l_empty_idx - l_size > 0 THEN l_possible_moves(k) := l_empty_idx - l_size; k := k + 1; END IF;
+                    IF l_empty_idx + l_size <= l_size*l_size THEN l_possible_moves(k) := l_empty_idx + l_size; END IF;
+                    
+                    l_rand_move := TRUNC(DBMS_RANDOM.VALUE(1, l_possible_moves.COUNT + 1));
+                    l_move_to_idx := l_possible_moves(l_rand_move);
+                    l_temp := l_board(l_move_to_idx);
+                    l_board(l_move_to_idx) := l_board(l_empty_idx);
+                    l_board(l_empty_idx) := l_temp;
+                    l_empty_idx := l_move_to_idx;
+                END;
+            END LOOP;
+            
+            l_start_state := table_to_state(l_board);
+            
+            -- Выходим из цикла, если сгенерированное поле НЕ равно целевому
+            EXIT WHEN l_start_state != l_target_state;
         END LOOP;
         
-        l_start_state := table_to_state(l_board);
-        
-        INSERT INTO GAME_SESSIONS (USER_ID, BOARD_SIZE, TARGET_STATE, GAME_MODE, IMAGE_URL, BOARD_STATE, REDO_STACK)
-        VALUES (p_user_id, l_size, l_target_state, p_game_mode, p_image_url, l_start_state, NULL)
+        -- ИСПРАВЛЕНО: Сохраняем изначальную сложность в сессию
+        INSERT INTO GAME_SESSIONS (USER_ID, BOARD_SIZE, TARGET_STATE, GAME_MODE, IMAGE_URL, BOARD_STATE, REDO_STACK, DIFFICULTY_LEVEL)
+        VALUES (p_user_id, l_size, l_target_state, p_game_mode, p_image_url, l_start_state, NULL, p_shuffle_moves)
         RETURNING SESSION_ID INTO l_session_id;
 
         INSERT INTO MOVE_HISTORY (SESSION_ID, BOARD_STATE, MOVE_ORDER)
@@ -199,6 +207,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         RETURN get_game_state_json(l_session_id);
     END start_new_game;
 
+    -- ИСПРАВЛЕННАЯ ФУНКЦИЯ process_move
     FUNCTION process_move(p_session_id IN GAME_SESSIONS.SESSION_ID%TYPE, p_tile_value IN NUMBER) RETURN CLOB AS
         l_session GAME_SESSIONS%ROWTYPE;
         l_board GAME_MANAGER_PKG.t_board;
@@ -210,7 +219,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_stars NUMBER := 0;
         l_is_daily BOOLEAN;
         l_is_daily_numeric NUMBER;
-        l_difficulty NUMBER;
         l_duration NUMBER;
         l_final_json CLOB;
     BEGIN
@@ -250,11 +258,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                         l_stars := 1;
                 END;
 
-                IF l_is_daily THEN l_is_daily_numeric := 1;
-                ELSE l_is_daily_numeric := 0;
-                END IF;
-
-                SELECT COUNT(*)-1 INTO l_difficulty FROM MOVE_HISTORY WHERE SESSION_ID = p_session_id;
+                IF l_is_daily THEN l_is_daily_numeric := 1; ELSE l_is_daily_numeric := 0; END IF;
+                
                 l_duration := ROUND((CAST(CURRENT_TIMESTAMP AS DATE) - CAST(l_session.START_TIME AS DATE)) * 86400);
 
                 SELECT JSON_OBJECT(
@@ -264,8 +269,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                     'status' VALUE 'SOLVED', 'imageUrl' VALUE l_session.IMAGE_URL, 'stars' VALUE l_stars
                 ) INTO l_final_json FROM dual;
 
+                -- ИСПРАВЛЕНО: В архив сохраняется сложность из сессии, а не кол-во ходов.
                 INSERT INTO GAME_ARCHIVE (USER_ID, BOARD_SIZE, MOVES_MADE, DURATION_SECONDS, RESULT, GAME_MODE, STARS_EARNED, IS_DAILY_CHALLENGE, DIFFICULTY_LEVEL)
-                VALUES (l_session.USER_ID, l_session.BOARD_SIZE, l_session.MOVE_COUNT, l_duration, 'SOLVED', l_session.GAME_MODE, l_stars, l_is_daily_numeric, l_difficulty);
+                VALUES (l_session.USER_ID, l_session.BOARD_SIZE, l_session.MOVE_COUNT, l_duration, 'SOLVED', l_session.GAME_MODE, l_stars, l_is_daily_numeric, l_session.DIFFICULTY_LEVEL);
                 
                 DELETE FROM GAME_SESSIONS WHERE SESSION_ID = p_session_id;
                 COMMIT;
@@ -631,3 +637,4 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     END table_to_state;
 
 END GAME_MANAGER_PKG;
+/
