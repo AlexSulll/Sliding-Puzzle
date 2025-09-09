@@ -39,10 +39,6 @@
                     <div class="auth-toggle">
                         <p class="auth-prompt">Нет аккаунта? <a href="#" id="show-register-link" class="auth-link">Регистрация</a></p>
                     </div>
-                    <hr>
-                    <button id="guest-btn" class="btn btn-secondary">
-                        <i class="fas fa-user-secret"></i> Играть как гость
-                    </button>
                 </div>
 
                 <div id="register-view" class="hidden">
@@ -84,13 +80,19 @@
                             </div>
                         </div>
                         <div id="image-selection" class="hidden">
-                            <p>Выберите картинку:</p>
-                            <div class="image-previews">
-                                <img data-src="{{ url_for('static', filename='img/cat.jpg') }}" alt="Cat" class="preview-img">
-                                <img data-src="{{ url_for('static', filename='img/earth.jpg') }}" alt="Earth" class="preview-img">
-                                <img data-src="{{ url_for('static', filename='img/monalisa.jpg') }}" alt="Mona Lisa" class="preview-img">
+                            <div class="form-group">
+                                <label>Стандартные картинки</label>
+                                <div id="default-image-previews" class="image-previews">
+                                    </div>
                             </div>
-                            <label for="image-upload" class="btn btn-secondary"><i class="fas fa-upload"></i> Загрузить свою</label>
+                            
+                            <div class="form-group">
+                                <label>Ваши картинки</label>
+                                <div id="user-image-previews" class="image-previews">
+                                    </div>
+                            </div>
+
+                            <label for="image-upload" class="btn btn-secondary"><i class="fas fa-upload"></i> Загрузить свою</g>
                             <input type="file" id="image-upload" class="hidden" accept="image/*">
                             <p id="custom-image-name"></p>
                         </div>
