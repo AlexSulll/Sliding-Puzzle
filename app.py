@@ -132,6 +132,12 @@ def handle_action():
         elif action == 'get_user_images':
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_user_images', oracledb.DB_TYPE_CLOB, [user_id])
 
+        elif action == 'delete_image':
+            image_id_to_delete = params.get('imageId')
+            if image_id_to_delete:
+                cursor.callproc('GAME_MANAGER_PKG.delete_user_image', [user_id, image_id_to_delete])
+                return jsonify({"success": True, "message": "Image deleted"})
+            
         else:
             return jsonify({"error": "Unknown action"}), 400
 
@@ -152,29 +158,30 @@ def upload_image():
     if file:
         image_data = file.read()
         mime_type = file.mimetype
-
-        # Вычисляем SHA-256 хеш бинарных данных картинки
+        # file_name больше не нужен
         image_hash = hashlib.sha256(image_data).hexdigest()
-
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            # Вызываем обновленную функцию в БД
-            result = cursor.callfunc('GAME_MANAGER_PKG.save_user_image', int, 
-                                     [session['user_id'], mime_type, image_data, image_hash])
-
-            # Анализируем ответ от БД
+            # Вызываем функцию с 4 параметрами, убрав file_name
+            result = cursor.callfunc(
+                'GAME_MANAGER_PKG.save_user_image', 
+                int, 
+                [session['user_id'], mime_type, image_data, image_hash] # <-- Убрали file_name
+            )
+            
             if result == 1:
-                # Успешно загружено
                 return jsonify({'success': True, 'status': 'uploaded'})
-            else:
-                # Найден дубликат
+            elif result == 0:
                 return jsonify({'success': True, 'status': 'duplicate'})
+            elif result == 2:
+                return jsonify({'success': False, 'error': 'Достигнут лимит в 7 картинок.'})
 
         finally:
             cursor.close()
             pool.release(conn)
-
+        
     return jsonify({'error': 'File upload failed'}), 500
 
 @app.route('/api/image/<int:image_id>')

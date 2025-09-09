@@ -292,3 +292,31 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: 25px 0; }
     box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.2);
     outline: none;
 }
+
+.preview-container {
+    position: relative;
+}
+
+.delete-btn {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background-color: var(--danger-color);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+    line-height: 24px;
+    text-align: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    transform: scale(0.8);
+}
+
+.preview-container:hover .delete-btn {
+    opacity: 1;
+    transform: scale(1);
+}

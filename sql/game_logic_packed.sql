@@ -63,7 +63,8 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         o_mime_type OUT VARCHAR2, -- Было: DEFAULT_IMAGES.MIME_TYPE%TYPE
         o_image_data OUT BLOB
     );
-
+    
+    PROCEDURE delete_user_image(p_user_id IN USERS.USER_ID%TYPE, p_image_id IN USER_IMAGES.IMAGE_ID%TYPE);
     -- Блок для планировщика
     PROCEDURE create_daily_challenge;
 
@@ -370,26 +371,36 @@ END undo_move;
         p_image_hash IN VARCHAR2
     ) RETURN NUMBER AS
         l_count NUMBER;
+        l_image_limit CONSTANT NUMBER := 7; -- Устанавливаем лимит
     BEGIN
-        -- Проверяем, есть ли уже картинка с таким хешем у этого пользователя
+        -- --- НАЧАЛО НОВОГО КОДА ---
+        -- Сначала проверяем, не достиг ли пользователь лимита
+        SELECT COUNT(*)
+        INTO l_count
+        FROM USER_IMAGES
+        WHERE USER_ID = p_user_id;
+    
+        IF l_count >= l_image_limit THEN
+            RETURN 2; -- 2 означает "лимит достигнут"
+        END IF;
+        -- --- КОНЕЦ НОВОГО КОДА ---
+    
+        -- Проверяем, есть ли уже картинка с таким хешем (логика дубликатов)
         SELECT COUNT(*)
         INTO l_count
         FROM USER_IMAGES
         WHERE USER_ID = p_user_id AND IMAGE_HASH = p_image_hash;
     
-        -- Если найдена (l_count > 0), то это дубликат. Возвращаем 0.
         IF l_count > 0 THEN
             RETURN 0; -- 0 означает "дубликат"
         END IF;
     
-        -- Если дубликата нет, вставляем новую запись
-        INSERT INTO USER_IMAGES (USER_ID, MIME_TYPE, IMAGE_DATA, IMAGE_NAME, IMAGE_HASH)
-        VALUES (p_user_id, p_mime_type, p_image_data, NULL, p_image_hash);
+        INSERT INTO USER_IMAGES (USER_ID, MIME_TYPE, IMAGE_DATA, IMAGE_HASH)
+        VALUES (p_user_id, p_mime_type, p_image_data, p_image_hash);
     
         COMMIT;
         RETURN 1; -- 1 означает "успешно загружено"
     EXCEPTION
-        -- На случай, если уникальное ограничение сработает из-за гонки потоков
         WHEN DUP_VAL_ON_INDEX THEN
             RETURN 0;
     END save_user_image;
@@ -430,6 +441,16 @@ END undo_move;
         WHERE IMAGE_ID = p_image_id AND USER_ID IS NULL;
     END get_default_image_data;
     
+    PROCEDURE delete_user_image(p_user_id IN USERS.USER_ID%TYPE, p_image_id IN USER_IMAGES.IMAGE_ID%TYPE) AS
+    BEGIN
+        -- Удаляем картинку, только если она принадлежит текущему пользователю
+        -- Это ВАЖНО для безопасности!
+        DELETE FROM USER_IMAGES
+        WHERE IMAGE_ID = p_image_id AND USER_ID = p_user_id;
+    
+        COMMIT;
+    END delete_user_image;
+
     ----------------------------------------------------------------------------
     -- РЕАЛИЗАЦИЯ СОЛВЕРА
     ----------------------------------------------------------------------------

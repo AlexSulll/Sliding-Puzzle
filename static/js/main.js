@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
         userImagePreviews: document.getElementById('user-image-previews'),
         defaultImagePreviews: document.getElementById('default-image-previews'),
         imageUpload: document.getElementById('image-upload'),
+        uploadLabel: document.querySelector('label[for="image-upload"]'),
         customImageName: document.getElementById('custom-image-name'),
         gameBoard: document.getElementById('game-board'),
         movesCounter: document.getElementById('moves-counter'),
@@ -59,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
         filterSize: document.getElementById('filter-size'),
         filterDifficulty: document.getElementById('filter-difficulty'),
         applyFiltersBtn: document.getElementById('apply-filters-btn'),
-        historyTableContainer: document.getElementById('history-table-container'),
+        //historyTableContainer: document.getElementById('history-table-container'),
     };
 
     // === API Module: Simplified with a single action endpoint ===
@@ -69,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const response = await fetch(endpoint, options);
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({ message: `HTTP error! status: ${response.status}` }));
-                    throw new Error(errorData.message);
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
                 }
                 const contentType = response.headers.get("content-type");
                 if (contentType && contentType.includes("application/json")) return response.json();
@@ -140,9 +141,13 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // === UI Module: Handles all DOM manipulation ===
     const ui = {
+        // --- THIS IS THE CORRECTED FUNCTION ---
         loadImages: async () => {
+            // 1. Clear the containers
             DOMElements.defaultImagePreviews.innerHTML = '';
             DOMElements.userImagePreviews.innerHTML = '';
+
+            // 2. Load and display default images
             const defaultImages = await api.performAction('get_default_images');
             if (defaultImages && defaultImages.length > 0) {
                 defaultImages.forEach(imgData => {
@@ -150,14 +155,33 @@ document.addEventListener('DOMContentLoaded', () => {
                     DOMElements.defaultImagePreviews.appendChild(img);
                 });
             }
+
+            // 3. Load user images
             const userImages = await api.performAction('get_user_images');
+
+            // 4. Display user images
             if (userImages && userImages.length > 0) {
                 userImages.forEach(imgData => {
-                    const img = ui.createPreviewImage(`/api/image/${imgData.id}`, `User image ${imgData.id}`);
-                    DOMElements.userImagePreviews.appendChild(img);
+                    // --- ИСПРАВЛЕНО ---
+                    // Вызываем функцию, которая создает и картинку, и кнопку удаления
+                    const altText = `User image ${imgData.id}`;
+                    const imgContainer = ui.createUserPreviewImage(imgData.id, altText);
+                    DOMElements.userImagePreviews.appendChild(imgContainer);
                 });
             } else {
                 DOMElements.userImagePreviews.innerHTML = '<p class="no-images-msg">Вы еще не загружали картинок.</p>';
+            }
+
+            // 5. Check the limit AFTER loading user images
+            const imageLimit = 7;
+            if (userImages && userImages.length >= imageLimit) {
+                DOMElements.uploadLabel.classList.add('hidden');
+                DOMElements.customImageName.textContent = `Достигнут лимит в ${imageLimit} картинок.`;
+            } else {
+                DOMElements.uploadLabel.classList.remove('hidden');
+                if (DOMElements.customImageName.textContent.startsWith('Достигнут')) {
+                    DOMElements.customImageName.textContent = '';
+                }
             }
         },
         createPreviewImage: (path, alt) => {
@@ -168,6 +192,21 @@ document.addEventListener('DOMContentLoaded', () => {
             img.dataset.src = path;
             img.addEventListener('click', ui.handlePreviewClick);
             return img;
+        },
+        createUserPreviewImage: (id, alt) => {
+            const container = document.createElement('div');
+            container.className = 'preview-container';
+
+            const img = ui.createPreviewImage(`/api/image/${id}`, alt);
+            container.appendChild(img);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-btn';
+            deleteBtn.innerHTML = '<i class="fas fa-times"></i>';
+            deleteBtn.dataset.imageId = id;
+
+            container.appendChild(deleteBtn);
+            return container;
         },
         handlePreviewClick: (event) => {
             document.querySelectorAll('.preview-img').forEach(i => i.classList.remove('selected'));
@@ -180,16 +219,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const file = event.target.files[0];
             if (!file) return;
 
-            // --- НАЧАЛО НОВОГО КОДА ---
             const MAX_FILE_SIZE_MB = 5;
             const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
             if (file.size > MAX_FILE_SIZE_BYTES) {
                 DOMElements.customImageName.textContent = `Ошибка: Файл слишком большой (макс. ${MAX_FILE_SIZE_MB} МБ).`;
-                event.target.value = ''; // Очищаем поле ввода, чтобы пользователь мог выбрать другой файл
-                return; // Прекращаем выполнение функции
+                event.target.value = '';
+                return;
             }
-            // --- КОНЕЦ НОВОГО КОДА ---
 
             const formData = new FormData();
             formData.append('image', file);
@@ -205,7 +242,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     DOMElements.customImageName.textContent = 'Такая картинка уже есть.';
                 }
             } else {
-                // Обрабатываем ошибку от сервера, если она есть
                 const errorMessage = res && res.error ? res.error : 'Ошибка загрузки.';
                 DOMElements.customImageName.textContent = errorMessage;
             }
@@ -283,9 +319,9 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         renderGameHistory: async () => {
             const historyData = await api.performAction('get_game_history');
-            const container = DOMElements.historyTableContainer;
+            // const container = DOMElements.historyTableContainer;
             container.innerHTML = '';
-            if (!historyData || historyData.length === 0) { container.innerHTML = '<p>Вы еще не сыграли ни одной игры.</p>'; return; }
+            // if (!historyData || historyData.length === 0) { container.innerHTML = '<p>Вы еще не сыграли ни одной игры.</p>'; return; }
             const table = document.createElement('table');
             table.className = 'history-table';
             table.innerHTML = `<thead><tr><th>Дата</th><th>Размер</th><th>Ходы</th><th>Время</th><th>Статус</th><th></th></tr></thead><tbody></tbody>`;
@@ -345,17 +381,42 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.abandonBtn.addEventListener('click', game.abandon);
         DOMElements.playAgainBtn.addEventListener('click', game.playAgain);
         DOMElements.applyFiltersBtn.addEventListener('click', ui.renderLeaderboards);
-        DOMElements.historyTableContainer.addEventListener('click', (event) => {
-            if (event.target && event.target.classList.contains('replay-btn')) {
-                const gameId = event.target.dataset.gameId;
-                if (gameId) { game.start(true, parseInt(gameId, 10)); }
-            }
-        });
+        // DOMElements.historyTableContainer.addEventListener('click', (event) => {
+        //     if (event.target && event.target.classList.contains('replay-btn')) {
+        //         const gameId = event.target.dataset.gameId;
+        //         if (gameId) { game.start(true, parseInt(gameId, 10)); }
+        //     }
+        // });
         document.addEventListener('keydown', (e) => {
             if(DOMElements.gameScreen.classList.contains('active')) {
                 if(e.key.toLowerCase() === 'h') game.hint();
                 if(e.key.toLowerCase() === 'u' && !e.shiftKey) { e.preventDefault(); game.undo(); }
                 if(e.key.toLowerCase() === 'u' && e.shiftKey) { e.preventDefault(); game.redo(); }
+            }
+        });
+        DOMElements.userImagePreviews.addEventListener('click', async (event) => {
+            console.log("1. Клик по контейнеру картинок. Цель клика:", event.target);
+
+            const deleteButton = event.target.closest('.delete-btn');
+            console.log("2. Результат поиска кнопки .delete-btn:", deleteButton);
+
+            if (deleteButton) {
+                console.log("3. Кнопка найдена, заходим в условие.");
+                const imageId = deleteButton.dataset.imageId;
+                console.log("4. Получен ID картинки:", imageId);
+
+                if (confirm('Вы уверены, что хотите удалить эту картинку?')) {
+                    console.log("5. Пользователь подтвердил удаление. Отправляем запрос...");
+                    const response = await api.performAction('delete_image', { imageId });
+                    console.log("6. Получен ответ от сервера:", response);
+                    if (response && response.success) {
+                        ui.loadImages();
+                    } else {
+                        alert('Не удалось удалить картинку.');
+                    }
+                } else {
+                     console.log("5a. Пользователь отменил удаление.");
+                }
             }
         });
         auth.checkStatus();
