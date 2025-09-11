@@ -320,3 +320,53 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: 25px 0; }
     opacity: 1;
     transform: scale(1);
 }
+
+/* --- ЭКРАН ИСТОРИИ ИГР --- */
+#history-table-container {
+    margin-top: 20px;
+}
+
+.history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    box-shadow: var(--shadow);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.history-table th, .history-table td {
+    padding: 12px 15px;
+    text-align: left;
+}
+
+.history-table th {
+    background-color: #f7fafc;
+    font-weight: 600;
+}
+
+.history-table tr {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.history-table tr:last-child {
+    border-bottom: none;
+}
+
+.history-table tr:hover {
+    background-color: #ebf4ff;
+}
+
+.replay-btn {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+}
+
+.status-solved {
+    color: #f6ad55; /* warning-color */
+    font-weight: bold;
+}
+
+.status-abandoned {
+    color: #6c757d; /* secondary-color */
+}

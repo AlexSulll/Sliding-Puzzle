@@ -60,7 +60,8 @@ document.addEventListener('DOMContentLoaded', () => {
         filterSize: document.getElementById('filter-size'),
         filterDifficulty: document.getElementById('filter-difficulty'),
         applyFiltersBtn: document.getElementById('apply-filters-btn'),
-        //historyTableContainer: document.getElementById('history-table-container'),
+        historyScreen: document.getElementById('history-screen'),
+        historyTableContainer: document.getElementById('history-table-container')
     };
 
     // === API Module: Simplified with a single action endpoint ===
@@ -319,18 +320,37 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         renderGameHistory: async () => {
             const historyData = await api.performAction('get_game_history');
-            // const container = DOMElements.historyTableContainer;
-            container.innerHTML = '';
-            // if (!historyData || historyData.length === 0) { container.innerHTML = '<p>Вы еще не сыграли ни одной игры.</p>'; return; }
+            const container = DOMElements.historyTableContainer;
+            container.innerHTML = ''; // Очищаем контейнер
+
+            if (!historyData || historyData.length === 0) {
+                container.innerHTML = '<p>Вы еще не сыграли ни одной игры.</p>';
+                return;
+            }
+
             const table = document.createElement('table');
             table.className = 'history-table';
             table.innerHTML = `<thead><tr><th>Дата</th><th>Размер</th><th>Ходы</th><th>Время</th><th>Статус</th><th></th></tr></thead><tbody></tbody>`;
             const tbody = table.querySelector('tbody');
+
             historyData.forEach(game => {
-                const time = new Date(game.time * 1000).toISOString().substr(14, 5);
-                const statusText = game.status === 'SOLVED' ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` : '<span class="status-abandoned">Брошена</span>';
+                const minutes = String(Math.floor(game.time / 60)).padStart(2, '0');
+                const seconds = String(game.time % 60).padStart(2, '0');
+                const timeStr = `${minutes}:${seconds}`;
+
+                const statusText = game.status === 'SOLVED' 
+                    ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` 
+                    : '<span class="status-abandoned">Сдался</span>';
+
                 const row = document.createElement('tr');
-                row.innerHTML = `<td>${game.date}</td><td>${game.size}x${game.size}</td><td>${game.moves}</td><td>${time}</td><td>${statusText}</td><td><button class="btn btn-secondary replay-btn" data-game-id="${game.gameId}">Переиграть</button></td>`;
+                row.innerHTML = `
+                    <td>${game.date}</td>
+                    <td>${game.size}x${game.size}</td>
+                    <td>${game.moves}</td>
+                    <td>${timeStr}</td>
+                    <td>${statusText}</td>
+                    <td><button class="btn btn-secondary replay-btn" data-game-id="${game.gameId}">Переиграть</button></td>
+                `;
                 tbody.appendChild(row);
             });
             container.appendChild(table);
@@ -371,7 +391,15 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.showLoginLink.addEventListener('click', (e) => { e.preventDefault(); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); DOMElements.authError.textContent = ''; });
         DOMElements.navButtons.forEach(btn => btn.addEventListener('click', () => ui.showScreen(btn.dataset.screen)));
         DOMElements.dailyCheck.addEventListener('change', (e) => { state.isDaily = e.target.checked; DOMElements.regularSettings.classList.toggle('hidden', state.isDaily); });
-        DOMElements.modeRadios.forEach(radio => radio.addEventListener('change', (e) => { state.gameMode = e.target.value; DOMElements.imageSelection.classList.toggle('hidden', state.gameMode !== 'IMAGE'); }));
+        // Внутри функции init()
+        DOMElements.modeRadios.forEach(radio => radio.addEventListener('change', (e) => {
+            state.gameMode = e.target.value;
+            DOMElements.imageSelection.classList.toggle('hidden', state.gameMode !== 'IMAGE');
+            if (state.gameMode === 'NUMBERS') {
+                state.imageUrl = null;
+                document.querySelectorAll('.preview-img.selected').forEach(img => img.classList.remove('selected'));
+            }
+        }));
         DOMElements.imageUpload.addEventListener('change', ui.handleImageUpload);
         DOMElements.startBtn.addEventListener('click', () => game.start(false, null));
         DOMElements.gameBoard.addEventListener('click', (e) => { const tile = e.target.closest('.tile'); if (tile && tile.dataset.value) game.move(parseInt(tile.dataset.value, 10)); });
@@ -381,12 +409,14 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.abandonBtn.addEventListener('click', game.abandon);
         DOMElements.playAgainBtn.addEventListener('click', game.playAgain);
         DOMElements.applyFiltersBtn.addEventListener('click', ui.renderLeaderboards);
-        // DOMElements.historyTableContainer.addEventListener('click', (event) => {
-        //     if (event.target && event.target.classList.contains('replay-btn')) {
-        //         const gameId = event.target.dataset.gameId;
-        //         if (gameId) { game.start(true, parseInt(gameId, 10)); }
-        //     }
-        // });
+        DOMElements.historyTableContainer.addEventListener('click', (event) => {
+            if (event.target && event.target.classList.contains('replay-btn')) {
+                const gameId = event.target.dataset.gameId;
+                if (gameId) {
+                    game.start(true, parseInt(gameId, 10));
+                }
+            }
+        });
         document.addEventListener('keydown', (e) => {
             if(DOMElements.gameScreen.classList.contains('active')) {
                 if(e.key.toLowerCase() === 'h') game.hint();
