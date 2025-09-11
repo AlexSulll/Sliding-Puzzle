@@ -4,7 +4,7 @@ import hashlib
 import mimetypes
 
 # --- НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К БАЗЕ ДАННЫХ ---
-# (скопируйте их из вашего файла app.py)
+# (Убедитесь, что они соответствуют вашему файлу app.py)
 DB_USER = "PUZZLEGAME"
 DB_PASSWORD = "qwertylf1"
 DB_DSN = "localhost:1521/XEPDB1"
@@ -28,7 +28,7 @@ def load_default_images():
             with connection.cursor() as cursor:
                 print("Подключение к базе данных успешно.")
                 
-                for filename in os.listdir(IMAGE_DIR):
+                for filename in sorted(os.listdir(IMAGE_DIR)): # Сортируем для предсказуемого порядка
                     file_path = os.path.join(IMAGE_DIR, filename)
                     if os.path.isfile(file_path):
                         try:
@@ -36,8 +36,9 @@ def load_default_images():
                             with open(file_path, 'rb') as f:
                                 image_data = f.read()
 
-                            # Вычисляем хеш
-                            image_hash = hashlib.sha256(image_data).hexdigest()
+                            # Вычисляем хеш и приводим к верхнему регистру
+                            image_hash = hashlib.sha256(image_data).hexdigest().upper()
+                            
                             # Определяем MIME-тип
                             mime_type, _ = mimetypes.guess_type(file_path)
                             if mime_type is None:
@@ -45,19 +46,19 @@ def load_default_images():
 
                             print(f"Обработка файла: {filename}...")
 
-                            # Используем MERGE для безопасной вставки (избегаем дубликатов)
-                            # Он вставит запись, только если картинки с таким именем и USER_ID IS NULL еще нет
+                            # --- ИСПРАВЛЕННЫЙ ЗАПРОС ---
+                            # Используем MERGE для безопасной вставки по ХЕШУ
+                            # Он вставит запись, только если картинки с таким хешем и USER_ID IS NULL еще нет
                             sql_merge = """
                                 MERGE INTO user_images t
-                                USING (SELECT :name AS image_name FROM dual) s
-                                ON (t.image_name = s.image_name AND t.user_id IS NULL)
+                                USING (SELECT :hash AS image_hash FROM dual) s
+                                ON (t.image_hash = s.image_hash AND t.user_id IS NULL)
                                 WHEN NOT MATCHED THEN
-                                    INSERT (user_id, mime_type, image_data, image_name, image_hash)
-                                    VALUES (NULL, :mime, :data, :name, :hash)
+                                    INSERT (image_id, user_id, mime_type, image_data, image_hash)
+                                    VALUES (USER_IMAGES_SEQ.NEXTVAL, NULL, :mime, :data, :hash)
                             """
                             
                             cursor.execute(sql_merge, {
-                                'name': filename,
                                 'mime': mime_type,
                                 'data': image_data,
                                 'hash': image_hash

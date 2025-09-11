@@ -4,136 +4,207 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
     -- ОБЩИЕ ТИПЫ ДАННЫХ
     ----------------------------------------------------------------------------
     TYPE t_board IS TABLE OF NUMBER INDEX BY PLS_INTEGER;
-
     TYPE t_node IS RECORD (
         board_state t_board,
         g_cost      NUMBER,
         h_cost      NUMBER
     );
-
     TYPE t_path IS TABLE OF t_node INDEX BY PLS_INTEGER;
 
     ----------------------------------------------------------------------------
-    -- ПРОЦЕДУРЫ И ФУНКЦИИ API
+    -- API: БЛОК АВТОРИЗАЦИИ
     ----------------------------------------------------------------------------
+    FUNCTION register_user(
+        p_username      IN VARCHAR2,
+        p_password_hash IN VARCHAR2
+    ) RETURN NUMBER;
 
-    -- Блок авторизации
-    FUNCTION register_user(p_username IN VARCHAR2, p_password_hash IN VARCHAR2) RETURN NUMBER;
-    FUNCTION login_user(p_username IN VARCHAR2, p_password_hash IN VARCHAR2) RETURN NUMBER;
+    FUNCTION login_user(
+        p_username      IN VARCHAR2,
+        p_password_hash IN VARCHAR2
+    ) RETURN NUMBER;
 
-    -- Блок управления игрой
-    FUNCTION check_active_session(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB;
-    FUNCTION start_new_game(
-        p_user_id IN USERS.USER_ID%TYPE, p_board_size IN NUMBER,
-        p_shuffle_moves IN NUMBER, p_game_mode IN VARCHAR2,
-        p_image_url IN VARCHAR2, p_is_daily_challenge IN BOOLEAN,
-        p_force_new IN BOOLEAN,
-        p_replay_game_id IN GAMES.GAME_ID%TYPE DEFAULT NULL
+    ----------------------------------------------------------------------------
+    -- API: БЛОК УПРАВЛЕНИЯ ИГРОЙ
+    ----------------------------------------------------------------------------
+    FUNCTION check_active_session(
+        p_user_id IN USERS.USER_ID%TYPE
     ) RETURN CLOB;
-    FUNCTION process_move(p_session_id IN GAMES.GAME_ID%TYPE, p_tile_value IN NUMBER) RETURN CLOB;
-    FUNCTION undo_move(p_session_id IN GAMES.GAME_ID%TYPE) RETURN CLOB;
-    FUNCTION redo_move(p_session_id IN GAMES.GAME_ID%TYPE) RETURN CLOB;
-    PROCEDURE abandon_game(p_session_id IN GAMES.GAME_ID%TYPE);
+
+    FUNCTION start_new_game(
+        p_user_id           IN USERS.USER_ID%TYPE,
+        p_board_size        IN NUMBER,
+        p_shuffle_moves     IN NUMBER,
+        p_game_mode         IN VARCHAR2,
+        p_image_id          IN NUMBER,
+        p_is_daily_challenge IN BOOLEAN,
+        p_force_new         IN BOOLEAN,
+        p_replay_game_id    IN GAMES.GAME_ID%TYPE DEFAULT NULL
+    ) RETURN CLOB;
+
+    FUNCTION process_move(
+        p_session_id IN GAMES.GAME_ID%TYPE,
+        p_tile_value IN NUMBER
+    ) RETURN CLOB;
+
+    FUNCTION undo_move(
+        p_session_id IN GAMES.GAME_ID%TYPE
+    ) RETURN CLOB;
+
+    FUNCTION redo_move(
+        p_session_id IN GAMES.GAME_ID%TYPE
+    ) RETURN CLOB;
+
+    PROCEDURE abandon_game(
+        p_session_id IN GAMES.GAME_ID%TYPE
+    );
     
-    -- Блок подсказок, рейтингов и изображений
-    FUNCTION get_hint(p_session_id IN GAMES.GAME_ID%TYPE) RETURN VARCHAR2;
-    FUNCTION get_leaderboards(p_filter_size IN NUMBER, p_filter_difficulty IN NUMBER) RETURN CLOB;
-    FUNCTION get_game_history(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB;
+    ----------------------------------------------------------------------------
+    -- API: БЛОК ПОДСКАЗОК, РЕЙТИНГОВ И ИЗОБРАЖЕНИЙ
+    ----------------------------------------------------------------------------
+    FUNCTION get_hint(
+        p_session_id IN GAMES.GAME_ID%TYPE
+    ) RETURN VARCHAR2;
+
+    FUNCTION get_leaderboards(
+        p_filter_size       IN NUMBER,
+        p_filter_difficulty IN NUMBER
+    ) RETURN CLOB;
+
+    FUNCTION get_game_history(
+        p_user_id IN USERS.USER_ID%TYPE
+    ) RETURN CLOB;
     
     FUNCTION save_user_image(
-        p_user_id IN USERS.USER_ID%TYPE, 
-        p_mime_type IN VARCHAR2, 
+        p_user_id    IN USERS.USER_ID%TYPE,
+        p_mime_type  IN VARCHAR2,
         p_image_data IN BLOB,
         p_image_hash IN VARCHAR2
     ) RETURN NUMBER;
-    FUNCTION get_user_images(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB;
+
+    FUNCTION get_user_images(
+        p_user_id IN USERS.USER_ID%TYPE
+    ) RETURN CLOB;
     
-    -- ИСПРАВЛЕНО: Заменяем зависимость от типа колонки на базовый тип NUMBER
     PROCEDURE get_user_image_data(
-        p_image_id IN NUMBER, -- Было: USER_IMAGES.IMAGE_ID%TYPE
-        o_mime_type OUT VARCHAR2, -- Было: USER_IMAGES.MIME_TYPE%TYPE
+        p_image_id   IN NUMBER,
+        o_mime_type  OUT VARCHAR2,
         o_image_data OUT BLOB
     );
 
     FUNCTION get_default_images RETURN CLOB;
     
-    -- ИСПРАВЛЕНО: Заменяем зависимость от типа колонки на базовый тип NUMBER
     PROCEDURE get_default_image_data(
-        p_image_id IN NUMBER, -- Было: DEFAULT_IMAGES.IMAGE_ID%TYPE
-        o_mime_type OUT VARCHAR2, -- Было: DEFAULT_IMAGES.MIME_TYPE%TYPE
+        p_image_id   IN NUMBER,
+        o_mime_type  OUT VARCHAR2,
         o_image_data OUT BLOB
     );
     
-    PROCEDURE delete_user_image(p_user_id IN USERS.USER_ID%TYPE, p_image_id IN USER_IMAGES.IMAGE_ID%TYPE);
-    -- Блок для планировщика
+    PROCEDURE delete_user_image(
+        p_user_id  IN USERS.USER_ID%TYPE,
+        p_image_id IN USER_IMAGES.IMAGE_ID%TYPE
+    );
+    
+    ----------------------------------------------------------------------------
+    -- API: БЛОК ДЛЯ ПЛАНИРОВЩИКА
+    ----------------------------------------------------------------------------
     PROCEDURE create_daily_challenge;
 
 END GAME_MANAGER_PKG;
 /
 
--- 2. ТЕЛО ЕДИНОГО ПАКЕТА
+
+-- 2. ТЕЛО ПАКЕТА
 CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
     ----------------------------------------------------------------------------
-    -- ПРИВАТНЫЕ УТИЛИТЫ И ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ДЛЯ СОЛВЕРА
+    -- ПРИВАТНЫЕ УТИЛИТЫ И ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
     ----------------------------------------------------------------------------
     g_target_positions GAME_MANAGER_PKG.t_board;
-    g_board_size NUMBER;
+    g_board_size       NUMBER;
 
+    -- (Сигнатуры приватных функций для наглядности)
     FUNCTION state_to_table(p_state IN VARCHAR2) RETURN GAME_MANAGER_PKG.t_board;
     FUNCTION table_to_state(p_table IN GAME_MANAGER_PKG.t_board) RETURN VARCHAR2;
     FUNCTION get_game_state_json(p_game_id IN NUMBER) RETURN CLOB;
     FUNCTION calculate_heuristic(p_board GAME_MANAGER_PKG.t_board) RETURN NUMBER;
     PROCEDURE init_target_positions(p_target_board GAME_MANAGER_PKG.t_board, p_size NUMBER);
-    FUNCTION get_next_best_move(p_board_state IN VARCHAR2, p_target_board_state IN VARCHAR2, p_board_size_param  IN NUMBER) RETURN NUMBER;
+    
+    -- ИСПРАВЛЕНИЕ: Добавлены недостающие объявления
+    FUNCTION is_state_in_path(p_path GAME_MANAGER_PKG.t_path, p_board GAME_MANAGER_PKG.t_board) RETURN BOOLEAN;
+    FUNCTION search(p_path IN OUT NOCOPY GAME_MANAGER_PKG.t_path, p_g_cost IN NUMBER, p_threshold IN NUMBER, o_solution OUT NOCOPY GAME_MANAGER_PKG.t_path) RETURN NUMBER;
+    FUNCTION get_next_best_move(p_board_state IN VARCHAR2, p_target_board_state IN VARCHAR2, p_board_size_param IN NUMBER) RETURN NUMBER;
     
     ----------------------------------------------------------------------------
-    -- РЕАЛИЗАЦИЯ БЛОКА АВТОРИЗАЦИИ
+    -- РЕАЛИЗАЦИЯ: БЛОК АВТОРИЗАЦИИ
     ----------------------------------------------------------------------------
     FUNCTION register_user(
-        p_username IN VARCHAR2,
+        p_username      IN VARCHAR2,
         p_password_hash IN VARCHAR2
-    ) RETURN NUMBER AS
-        l_user_id NUMBER;
-        l_count NUMBER;
+    ) RETURN NUMBER
+    AS
+        l_user_id USERS.USER_ID%TYPE;
+        l_count   NUMBER;
     BEGIN
-        SELECT COUNT(*) INTO l_count FROM USERS WHERE USERNAME = p_username;
+        SELECT COUNT(*)
+        INTO l_count
+        FROM USERS
+        WHERE USERNAME = p_username;
+    
         IF l_count > 0 THEN
-            RETURN -1;
+            RETURN -1; -- Пользователь уже существует
         END IF;
-        INSERT INTO USERS (USERNAME, PASSWORD_HASH)
-        VALUES (p_username, p_password_hash)
+    
+        -- --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+        -- Добавляем USER_ID в список столбцов и используем USERS_SEQ.NEXTVAL для генерации значения
+        INSERT INTO USERS (USER_ID, USERNAME, PASSWORD_HASH)
+        VALUES (USERS_SEQ.NEXTVAL, p_username, p_password_hash)
         RETURNING USER_ID INTO l_user_id;
+        -- --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+    
         COMMIT;
         RETURN l_user_id;
     END register_user;
 
     FUNCTION login_user(
-        p_username IN VARCHAR2,
+        p_username      IN VARCHAR2,
         p_password_hash IN VARCHAR2
-    ) RETURN NUMBER AS
-        l_user_id NUMBER;
+    ) RETURN NUMBER
+    AS
+        l_user_id USERS.USER_ID%TYPE;
     BEGIN
-        SELECT USER_ID INTO l_user_id
+        SELECT USER_ID
+        INTO l_user_id
         FROM USERS
         WHERE USERNAME = p_username AND PASSWORD_HASH = p_password_hash;
+
         RETURN l_user_id;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
-            RETURN 0;
+            RETURN 0; -- Неверный логин или пароль
     END login_user;
 
     ----------------------------------------------------------------------------
-    -- РЕАЛИЗАЦИЯ БЛОКА УПРАВЛЕНИЯ ИГРОЙ
+    -- РЕАЛИЗАЦИЯ: БЛОК УПРАВЛЕНИЯ ИГРОЙ
     ----------------------------------------------------------------------------
-    FUNCTION check_active_session(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB AS
-        l_game GAMES%ROWTYPE;
+    FUNCTION check_active_session(
+        p_user_id IN USERS.USER_ID%TYPE
+    ) RETURN CLOB
+    AS
+        l_game_id   GAMES.GAME_ID%TYPE;
         l_json_clob CLOB;
     BEGIN
-        SELECT * INTO l_game FROM GAMES WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE';
-        l_json_clob := get_game_state_json(l_game.GAME_ID);
+        SELECT GAME_ID
+        INTO l_game_id
+        FROM GAMES
+        WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE';
+
+        l_json_clob := get_game_state_json(l_game_id);
+        
+        -- Добавляем флаг, что сессия найдена
         l_json_clob := SUBSTR(l_json_clob, 1, LENGTH(l_json_clob) - 1);
         l_json_clob := l_json_clob || ',"active_session_found":true}';
+
         RETURN l_json_clob;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
@@ -141,19 +212,25 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     END check_active_session;
 
     FUNCTION start_new_game(
-        p_user_id IN USERS.USER_ID%TYPE, p_board_size IN NUMBER,
-        p_shuffle_moves IN NUMBER, p_game_mode IN VARCHAR2,
-        p_image_url IN VARCHAR2, p_is_daily_challenge IN BOOLEAN,
-        p_force_new IN BOOLEAN, p_replay_game_id IN GAMES.GAME_ID%TYPE DEFAULT NULL
-    ) RETURN CLOB AS
+    p_user_id           IN USERS.USER_ID%TYPE,
+    p_board_size        IN NUMBER,
+    p_shuffle_moves     IN NUMBER,
+    p_game_mode         IN VARCHAR2,
+    p_image_id          IN NUMBER,
+    p_is_daily_challenge IN BOOLEAN,
+    p_force_new         IN BOOLEAN,
+    p_replay_game_id    IN GAMES.GAME_ID%TYPE DEFAULT NULL
+) RETURN CLOB
+    AS
         l_active_session_json CLOB;
-        l_game_id GAMES.GAME_ID%TYPE;
-        l_start_state VARCHAR2(1000);
-        l_target_state VARCHAR2(1000);
-        l_size PLS_INTEGER := p_board_size;
-        l_shuffles PLS_INTEGER := p_shuffle_moves;
-        l_is_daily_numeric NUMBER := 0;
-        l_old_game GAMES%ROWTYPE;
+        l_game_id             GAMES.GAME_ID%TYPE;
+        l_start_state         VARCHAR2(1000);
+        l_target_state        VARCHAR2(1000);
+        l_size                NUMBER := p_board_size;
+        l_shuffles            NUMBER := p_shuffle_moves;
+        l_challenge_id        GAMES.CHALLENGE_ID%TYPE := NULL;
+        l_optimal_moves       GAMES.OPTIMAL_MOVES%TYPE;
+        l_image_id_to_use     GAMES.IMAGE_ID%TYPE := p_image_id;
     BEGIN
         IF NOT p_force_new THEN
             l_active_session_json := check_active_session(p_user_id);
@@ -161,41 +238,38 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 RETURN l_active_session_json;
             END IF;
         END IF;
-
+        
         DELETE FROM GAMES WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE';
-
-        IF p_replay_game_id IS NOT NULL THEN
-            SELECT * INTO l_old_game FROM GAMES WHERE GAME_ID = p_replay_game_id AND USER_ID = p_user_id;
-            SELECT BOARD_STATE INTO l_start_state FROM MOVE_HISTORY WHERE GAME_ID = p_replay_game_id AND MOVE_ORDER = 0;
-            l_size := l_old_game.BOARD_SIZE;
-            l_shuffles := l_old_game.DIFFICULTY_LEVEL;
-            l_target_state := l_old_game.TARGET_STATE;
-            l_is_daily_numeric := l_old_game.IS_DAILY_CHALLENGE;
+    
+        IF p_is_daily_challenge THEN
+            DECLARE
+                l_daily DAILY_CHALLENGES%ROWTYPE;
+            BEGIN
+                SELECT * INTO l_daily
+                FROM DAILY_CHALLENGES
+                WHERE CHALLENGE_DATE = TRUNC(SYSDATE);
+    
+                l_challenge_id    := l_daily.CHALLENGE_ID;
+                l_size            := l_daily.BOARD_SIZE;
+                l_shuffles        := l_daily.SHUFFLE_MOVES;
+                l_start_state     := l_daily.BOARD_STATE;
+                l_optimal_moves   := l_daily.OPTIMAL_MOVES;
+                l_image_id_to_use := l_daily.IMAGE_ID;
+            EXCEPTION
+                WHEN NO_DATA_FOUND THEN
+                    RETURN '{"error":"Daily challenge not found for today"}';
+            END;
         ELSE
-            IF p_is_daily_challenge THEN
-                DECLARE l_daily DAILY_CHALLENGES%ROWTYPE;
-                BEGIN
-                    SELECT * INTO l_daily FROM DAILY_CHALLENGES WHERE CHALLENGE_DATE = TRUNC(SYSDATE);
-                    l_size := l_daily.BOARD_SIZE;
-                    l_shuffles := l_daily.SHUFFLE_MOVES;
-                    l_target_state := l_daily.TARGET_STATE;
-                    l_is_daily_numeric := 1;
-                EXCEPTION
-                    WHEN NO_DATA_FOUND THEN
-                        l_is_daily_numeric := 0;
-                END;
-            END IF;
-            
-            IF l_is_daily_numeric = 0 THEN
-                l_target_state := '';
-                FOR i IN 1..(l_size*l_size - 1) LOOP l_target_state := l_target_state || i || ','; END LOOP;
-                l_target_state := l_target_state || '0';
-            END IF;
+            l_target_state := '';
+            FOR i IN 1..(l_size*l_size - 1) LOOP
+                l_target_state := l_target_state || i || ',';
+            END LOOP;
+            l_target_state := l_target_state || '0';
             
             LOOP
                 DECLARE
-                    l_board GAME_MANAGER_PKG.t_board := state_to_table(l_target_state);
-                    l_empty_idx PLS_INTEGER := l_size*l_size;
+                    l_board      GAME_MANAGER_PKG.t_board := state_to_table(l_target_state);
+                    l_empty_idx  PLS_INTEGER := l_size*l_size;
                 BEGIN
                     FOR i IN 1..l_shuffles LOOP
                         DECLARE
@@ -216,224 +290,323 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 END;
                 EXIT WHEN l_start_state != l_target_state;
             END LOOP;
+            
+            l_optimal_moves := 0;
         END IF;
         
-        INSERT INTO GAMES (USER_ID, STATUS, BOARD_SIZE, DIFFICULTY_LEVEL, GAME_MODE, IMAGE_URL, IS_DAILY_CHALLENGE, BOARD_STATE, TARGET_STATE, START_TIME)
-        VALUES (p_user_id, 'ACTIVE', l_size, l_shuffles, p_game_mode, p_image_url, l_is_daily_numeric, l_start_state, l_target_state, CURRENT_TIMESTAMP)
+        -- --- НАЧАЛО ИСПРАВЛЕНИЯ ---
+        -- Добавлен столбец GAME_ID и его значение из последовательности GAMES_SEQ.NEXTVAL
+        INSERT INTO GAMES (
+            GAME_ID, USER_ID, STATUS, BOARD_SIZE, SHUFFLE_MOVES, GAME_MODE, MOVE_COUNT,
+            IMAGE_ID, CHALLENGE_ID, START_TIME, DURATION_SECONDS, STARS_EARNED,
+            OPTIMAL_MOVES, CURRENT_MOVE_ORDER
+        ) VALUES (
+            GAMES_SEQ.NEXTVAL, p_user_id, 'ACTIVE', l_size, l_shuffles, p_game_mode, 0,
+            l_image_id_to_use, l_challenge_id, CURRENT_TIMESTAMP, 0, 0,
+            l_optimal_moves, 0
+        )
         RETURNING GAME_ID INTO l_game_id;
+        -- --- КОНЕЦ ИСПРАВЛЕНИЯ ---
         
-        INSERT INTO MOVE_HISTORY (GAME_ID, BOARD_STATE, MOVE_ORDER) VALUES (l_game_id, l_start_state, 0);
+        INSERT INTO MOVE_HISTORY (MOVE_ID, GAME_ID, MOVE_ORDER, BOARD_STATE)
+        VALUES (MOVE_HISTORY_SEQ.NEXTVAL, l_game_id, 0, l_start_state);
+    
         COMMIT;
         RETURN get_game_state_json(l_game_id);
     END start_new_game;
 
-    FUNCTION process_move(p_session_id IN GAMES.GAME_ID%TYPE, p_tile_value IN NUMBER) RETURN CLOB AS
-        l_game GAMES%ROWTYPE; l_board GAME_MANAGER_PKG.t_board;
-        l_empty_idx PLS_INTEGER; l_tile_idx PLS_INTEGER; l_is_adjacent BOOLEAN := FALSE;
-        l_new_board_state VARCHAR2(1000); l_stars NUMBER := 0;
-        l_duration NUMBER; l_final_json CLOB;
+    FUNCTION process_move(
+        p_session_id IN GAMES.GAME_ID%TYPE,
+        p_tile_value IN NUMBER
+    ) RETURN CLOB
+    AS
+        l_game              GAMES%ROWTYPE;
+        l_board             GAME_MANAGER_PKG.t_board;
+        l_current_state     MOVE_HISTORY.BOARD_STATE%TYPE;
+        l_empty_idx         PLS_INTEGER;
+        l_tile_idx          PLS_INTEGER;
+        l_is_adjacent       BOOLEAN := FALSE;
+        l_new_board_state   VARCHAR2(1000);
+        l_stars             NUMBER := 0;
+        l_duration          NUMBER;
+        l_target_state      VARCHAR2(1000);
     BEGIN
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id AND STATUS = 'ACTIVE';
-        l_board := state_to_table(l_game.BOARD_STATE);
+        
+        SELECT BOARD_STATE
+        INTO l_current_state
+        FROM MOVE_HISTORY
+        WHERE GAME_ID = p_session_id AND MOVE_ORDER = l_game.CURRENT_MOVE_ORDER;
+        
+        l_board := state_to_table(l_current_state);
+        
         FOR i IN l_board.FIRST..l_board.LAST LOOP
-            IF l_board(i) = 0 THEN l_empty_idx := i; END IF; IF l_board(i) = p_tile_value THEN l_tile_idx := i; END IF;
+            IF l_board(i) = 0 THEN l_empty_idx := i; END IF;
+            IF l_board(i) = p_tile_value THEN l_tile_idx := i; END IF;
         END LOOP;
-        IF (ABS(l_tile_idx - l_empty_idx) = 1 AND TRUNC((l_tile_idx-1)/l_game.BOARD_SIZE) = TRUNC((l_empty_idx-1)/l_game.BOARD_SIZE)) OR
-           (ABS(l_tile_idx - l_empty_idx) = l_game.BOARD_SIZE) THEN l_is_adjacent := TRUE; END IF;
+        
+        IF (ABS(l_tile_idx - l_empty_idx) = 1 AND TRUNC((l_tile_idx-1)/l_game.BOARD_SIZE) = TRUNC((l_empty_idx-1)/l_game.BOARD_SIZE))
+           OR (ABS(l_tile_idx - l_empty_idx) = l_game.BOARD_SIZE)
+        THEN
+            l_is_adjacent := TRUE;
+        END IF;
         
         IF l_is_adjacent THEN
-            l_board(l_empty_idx) := l_board(l_tile_idx); l_board(l_tile_idx) := 0;
+            l_board(l_empty_idx) := l_board(l_tile_idx);
+            l_board(l_tile_idx) := 0;
             l_new_board_state := table_to_state(l_board);
             
-            IF l_new_board_state = l_game.TARGET_STATE THEN
+            l_target_state := '';
+            FOR i IN 1..(l_game.BOARD_SIZE * l_game.BOARD_SIZE - 1) LOOP
+                l_target_state := l_target_state || i || ',';
+            END LOOP;
+            l_target_state := l_target_state || '0';
+            
+            IF l_new_board_state = l_target_state THEN
                 l_duration := ROUND((CAST(CURRENT_TIMESTAMP AS DATE) - CAST(l_game.START_TIME AS DATE)) * 86400);
-                DECLARE l_opt_moves NUMBER; BEGIN SELECT OPTIMAL_MOVES INTO l_opt_moves FROM DAILY_CHALLENGES WHERE CHALLENGE_DATE = TRUNC(l_game.START_TIME); IF l_game.MOVE_COUNT + 1 <= l_opt_moves THEN l_stars := 3; ELSIF l_game.MOVE_COUNT + 1 <= l_opt_moves * 1.1 THEN l_stars := 2; ELSE l_stars := 1; END IF; EXCEPTION WHEN NO_DATA_FOUND THEN l_stars := 1; END;
                 
-                UPDATE GAMES SET
-                    STATUS = 'SOLVED', MOVE_COUNT = l_game.MOVE_COUNT + 1, BOARD_STATE = l_new_board_state,
-                    COMPLETED_AT = CURRENT_TIMESTAMP, DURATION_SECONDS = l_duration, STARS_EARNED = l_stars
+                IF l_game.OPTIMAL_MOVES > 0 THEN
+                    IF (l_game.MOVE_COUNT + 1) <= l_game.OPTIMAL_MOVES THEN l_stars := 3;
+                    ELSIF (l_game.MOVE_COUNT + 1) <= l_game.OPTIMAL_MOVES * 1.2 THEN l_stars := 2;
+                    ELSE l_stars := 1; END IF;
+                ELSE
+                    l_stars := 1;
+                END IF;
+
+                UPDATE GAMES
+                SET STATUS = 'SOLVED',
+                    MOVE_COUNT = l_game.MOVE_COUNT + 1,
+                    COMPLETED_AT = CURRENT_TIMESTAMP,
+                    DURATION_SECONDS = l_duration,
+                    STARS_EARNED = l_stars
                 WHERE GAME_ID = p_session_id;
 
-                SELECT JSON_OBJECT(
-                    'sessionId' VALUE p_session_id, 'boardSize' VALUE l_game.BOARD_SIZE,
-                    'boardState' VALUE JSON_QUERY('[' || l_new_board_state || ']', '$'),
-                    'moves' VALUE l_game.MOVE_COUNT + 1, 'startTime' VALUE TO_CHAR(l_game.START_TIME, 'YYYY-MM-DD"T"HH24:MI:SS'),
-                    'status' VALUE 'SOLVED', 'imageUrl' VALUE l_game.IMAGE_URL, 'stars' VALUE l_stars,
-                    'gameMode' VALUE l_game.GAME_MODE
-                ) INTO l_final_json FROM dual;
+                INSERT INTO MOVE_HISTORY (MOVE_ID, GAME_ID, MOVE_ORDER, BOARD_STATE)
+                VALUES (MOVE_HISTORY_SEQ.NEXTVAL, p_session_id, l_game.CURRENT_MOVE_ORDER + 1, l_new_board_state);
                 
-                COMMIT;
-                RETURN l_final_json;
+                UPDATE GAMES SET CURRENT_MOVE_ORDER = l_game.CURRENT_MOVE_ORDER + 1 WHERE GAME_ID = p_session_id;
+
             ELSE
-                UPDATE GAMES SET BOARD_STATE = l_new_board_state, MOVE_COUNT = l_game.MOVE_COUNT + 1, REDO_STACK = NULL
+                DELETE FROM MOVE_HISTORY
+                WHERE GAME_ID = p_session_id AND MOVE_ORDER > l_game.CURRENT_MOVE_ORDER;
+                
+                INSERT INTO MOVE_HISTORY (MOVE_ID, GAME_ID, MOVE_ORDER, BOARD_STATE)
+                VALUES (MOVE_HISTORY_SEQ.NEXTVAL, p_session_id, l_game.CURRENT_MOVE_ORDER + 1, l_new_board_state);
+                
+                UPDATE GAMES
+                SET MOVE_COUNT = l_game.MOVE_COUNT + 1,
+                    CURRENT_MOVE_ORDER = l_game.CURRENT_MOVE_ORDER + 1
                 WHERE GAME_ID = p_session_id;
-                INSERT INTO MOVE_HISTORY (GAME_ID, BOARD_STATE, MOVE_ORDER) VALUES (p_session_id, l_new_board_state, l_game.MOVE_COUNT + 1);
             END IF;
             COMMIT;
         END IF;
+        
         RETURN get_game_state_json(p_session_id);
     END process_move;
 
-    PROCEDURE abandon_game(p_session_id IN GAMES.GAME_ID%TYPE) AS
-        l_duration NUMBER; l_start_time TIMESTAMP;
+    PROCEDURE abandon_game(
+        p_session_id IN GAMES.GAME_ID%TYPE
+    )
+    AS
+        l_duration   NUMBER;
+        l_start_time TIMESTAMP;
     BEGIN
         SELECT START_TIME INTO l_start_time FROM GAMES WHERE GAME_ID = p_session_id;
         l_duration := ROUND((CAST(CURRENT_TIMESTAMP AS DATE) - CAST(l_start_time AS DATE)) * 86400);
-        UPDATE GAMES SET STATUS = 'ABANDONED', COMPLETED_AT = CURRENT_TIMESTAMP, DURATION_SECONDS = l_duration
+
+        UPDATE GAMES
+        SET STATUS = 'ABANDONED',
+            COMPLETED_AT = CURRENT_TIMESTAMP,
+            DURATION_SECONDS = l_duration
         WHERE GAME_ID = p_session_id;
         COMMIT;
     END abandon_game;
     
-FUNCTION undo_move(p_session_id IN GAMES.GAME_ID%TYPE) RETURN CLOB AS
-    l_game GAMES%ROWTYPE;
-    l_previous_state MOVE_HISTORY.BOARD_STATE%TYPE;
-BEGIN
-    SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id AND STATUS = 'ACTIVE';
-
-    IF l_game.MOVE_COUNT > 0 THEN
-        SELECT BOARD_STATE INTO l_previous_state
-        FROM MOVE_HISTORY
-        WHERE GAME_ID = p_session_id AND MOVE_ORDER = l_game.MOVE_COUNT - 1;
-
-        UPDATE GAMES
-        SET BOARD_STATE = l_previous_state,
-            MOVE_COUNT = l_game.MOVE_COUNT - 1,
-            -- ИСПРАВЛЕНО: Явно преобразуем VARCHAR2 в CLOB для совместимости типов
-            REDO_STACK = CASE
-                         WHEN l_game.REDO_STACK IS NULL
-                         THEN TO_CLOB(l_game.BOARD_STATE) -- Преобразование здесь
-                         ELSE l_game.REDO_STACK || '|' || l_game.BOARD_STATE
-                       END
-        WHERE GAME_ID = p_session_id;
-
-        DELETE FROM MOVE_HISTORY
-        WHERE GAME_ID = p_session_id AND MOVE_ORDER = l_game.MOVE_COUNT;
-        
-        COMMIT;
-    END IF;
-
-    RETURN get_game_state_json(p_session_id);
-END undo_move;
-
-    FUNCTION redo_move(p_session_id IN GAMES.GAME_ID%TYPE) RETURN CLOB AS
-        l_game GAMES%ROWTYPE; l_redo_state VARCHAR2(2000); l_new_redo_stack CLOB;
-        l_last_pipe_pos PLS_INTEGER;
+    FUNCTION undo_move(
+        p_session_id IN GAMES.GAME_ID%TYPE
+    ) RETURN CLOB
+    AS
+        l_game GAMES%ROWTYPE;
     BEGIN
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id AND STATUS = 'ACTIVE';
-        IF l_game.REDO_STACK IS NOT NULL THEN
-            l_last_pipe_pos := INSTR(l_game.REDO_STACK, '|', -1);
-            IF l_last_pipe_pos = 0 THEN l_redo_state := l_game.REDO_STACK; l_new_redo_stack := NULL;
-            ELSE l_redo_state := SUBSTR(l_game.REDO_STACK, l_last_pipe_pos + 1); l_new_redo_stack := SUBSTR(l_game.REDO_STACK, 1, l_last_pipe_pos - 1); END IF;
-            UPDATE GAMES SET BOARD_STATE = l_redo_state, MOVE_COUNT = l_game.MOVE_COUNT + 1, REDO_STACK = l_new_redo_stack
+        
+        IF l_game.CURRENT_MOVE_ORDER > 0 THEN
+            UPDATE GAMES
+            SET CURRENT_MOVE_ORDER = l_game.CURRENT_MOVE_ORDER - 1,
+            MOVE_COUNT = l_game.CURRENT_MOVE_ORDER - 1
             WHERE GAME_ID = p_session_id;
-            INSERT INTO MOVE_HISTORY (GAME_ID, BOARD_STATE, MOVE_ORDER) VALUES (p_session_id, l_redo_state, l_game.MOVE_COUNT + 1);
             COMMIT;
         END IF;
+
+        RETURN get_game_state_json(p_session_id);
+    END undo_move;
+
+    FUNCTION redo_move(
+        p_session_id IN GAMES.GAME_ID%TYPE
+    ) RETURN CLOB
+    AS
+        l_max_move_order     NUMBER;
+        l_current_move_order NUMBER;
+    BEGIN
+        SELECT CURRENT_MOVE_ORDER INTO l_current_move_order
+        FROM GAMES WHERE GAME_ID = p_session_id AND STATUS = 'ACTIVE';
+
+        SELECT MAX(MOVE_ORDER) INTO l_max_move_order
+        FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
+
+        IF l_current_move_order < l_max_move_order THEN
+            UPDATE GAMES
+            SET CURRENT_MOVE_ORDER = l_current_move_order + 1,
+            MOVE_COUNT = l_current_move_order + 1
+            WHERE GAME_ID = p_session_id;
+            COMMIT;
+        END IF;
+
         RETURN get_game_state_json(p_session_id);
     END redo_move;
 
     ----------------------------------------------------------------------------
-    -- РЕАЛИЗАЦИЯ БЛОКА ПОДСКАЗОК, РЕЙТИНГОВ И ИЗОБРАЖЕНИЙ
+    -- РЕАЛИЗАЦИЯ: БЛОК ПОДСКАЗОК, РЕЙТИНГОВ И ИЗОБРАЖЕНИЙ
     ----------------------------------------------------------------------------
-    FUNCTION get_leaderboards(p_filter_size IN NUMBER, p_filter_difficulty IN NUMBER) RETURN CLOB AS
-        l_json CLOB; l_query VARCHAR2(4000);
+    FUNCTION get_leaderboards(
+        p_filter_size       IN NUMBER,
+        p_filter_difficulty IN NUMBER
+    ) RETURN CLOB
+    AS
+        l_json  CLOB;
+        l_query VARCHAR2(4000);
     BEGIN
-        l_query := 'SELECT JSON_ARRAYAGG(JSON_OBJECT(''user'' VALUE u.USERNAME, ''total_stars'' VALUE SUM(a.STARS_EARNED)) ORDER BY SUM(a.STARS_EARNED) DESC RETURNING CLOB) FROM GAMES a JOIN USERS u ON a.USER_ID = u.USER_ID WHERE u.USERNAME != ''player1'' AND a.STATUS = ''SOLVED'' ';
-        IF p_filter_size > 0 THEN l_query := l_query || ' AND a.BOARD_SIZE = :1'; END IF;
-        IF p_filter_difficulty > 0 THEN IF INSTR(l_query, ':1') > 0 THEN l_query := l_query || ' AND a.DIFFICULTY_LEVEL = :2'; ELSE l_query := l_query || ' AND a.DIFFICULTY_LEVEL = :1'; END IF; END IF;
-        l_query := l_query || ' GROUP BY u.USERNAME';
-        IF p_filter_size > 0 AND p_filter_difficulty > 0 THEN EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_difficulty;
-        ELSIF p_filter_size > 0 THEN EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size;
-        ELSIF p_filter_difficulty > 0 THEN EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_difficulty;
-        ELSE EXECUTE IMMEDIATE l_query INTO l_json;
+        l_query := 'SELECT JSON_ARRAYAGG(JSON_OBJECT(''user'' VALUE u.USERNAME, ''total_stars'' VALUE SUM(a.STARS_EARNED)) ORDER BY SUM(a.STARS_EARNED) DESC RETURNING CLOB) FROM GAMES a JOIN USERS u ON a.USER_ID = u.USER_ID WHERE a.STATUS = ''SOLVED'' ';
+        
+        IF p_filter_size > 0 THEN
+            l_query := l_query || ' AND a.BOARD_SIZE = :1';
         END IF;
+        
+        IF p_filter_difficulty > 0 THEN
+            IF INSTR(l_query, ':1') > 0 THEN
+                l_query := l_query || ' AND a.SHUFFLE_MOVES = :2';
+            ELSE
+                l_query := l_query || ' AND a.SHUFFLE_MOVES = :1';
+            END IF;
+        END IF;
+        
+        l_query := l_query || ' GROUP BY u.USERNAME';
+        
+        IF p_filter_size > 0 AND p_filter_difficulty > 0 THEN
+            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_difficulty;
+        ELSIF p_filter_size > 0 THEN
+            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size;
+        ELSIF p_filter_difficulty > 0 THEN
+            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_difficulty;
+        ELSE
+            EXECUTE IMMEDIATE l_query INTO l_json;
+        END IF;
+        
         RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'));
     END get_leaderboards;
     
-    FUNCTION get_game_history(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB AS
+    FUNCTION get_game_history(
+        p_user_id IN USERS.USER_ID%TYPE
+    ) RETURN CLOB
+    AS
         l_json CLOB;
     BEGIN
-        SELECT JSON_ARRAYAGG(
-            JSON_OBJECT( 'gameId' VALUE g.GAME_ID, 'date' VALUE TO_CHAR(g.COMPLETED_AT, 'DD.MM.YYYY HH24:MI'),
-                         'size' VALUE g.BOARD_SIZE, 'moves' VALUE g.MOVE_COUNT, 'time' VALUE g.DURATION_SECONDS,
-                         'status' VALUE g.STATUS, 'stars' VALUE g.STARS_EARNED
-            ) ORDER BY g.COMPLETED_AT DESC
-        )
-        INTO l_json FROM GAMES g WHERE g.USER_ID = p_user_id AND g.STATUS IN ('SOLVED', 'ABANDONED');
+        SELECT
+            JSON_ARRAYAGG(
+                JSON_OBJECT(
+                    'gameId' VALUE g.GAME_ID,
+                    'date'   VALUE TO_CHAR(g.START_TIME, 'DD.MM.YYYY HH24:MI'),
+                    'size'   VALUE g.BOARD_SIZE,
+                    'moves'  VALUE g.MOVE_COUNT,
+                    'time'   VALUE g.DURATION_SECONDS,
+                    'status' VALUE g.STATUS,
+                    'stars'  VALUE g.STARS_EARNED
+                ) ORDER BY g.START_TIME DESC
+            )
+        INTO l_json
+        FROM GAMES g
+        WHERE g.USER_ID = p_user_id AND g.STATUS IN ('SOLVED', 'ABANDONED');
+        
         RETURN NVL(l_json, '[]');
     END get_game_history;
 
-    -- НЕДОСТАЮЩИЕ ПРОЦЕДУРЫ ДЛЯ РАБОТЫ С КАРТИНКАМИ
     FUNCTION save_user_image(
-        p_user_id IN USERS.USER_ID%TYPE, 
-        p_mime_type IN VARCHAR2, 
+        p_user_id    IN USERS.USER_ID%TYPE,
+        p_mime_type  IN VARCHAR2,
         p_image_data IN BLOB,
         p_image_hash IN VARCHAR2
-    ) RETURN NUMBER AS
-        l_count NUMBER;
-        l_image_limit CONSTANT NUMBER := 7; -- Устанавливаем лимит
+    ) RETURN NUMBER
+    AS
+        l_count       NUMBER;
+        l_image_limit CONSTANT NUMBER := 7;
     BEGIN
-        -- --- НАЧАЛО НОВОГО КОДА ---
-        -- Сначала проверяем, не достиг ли пользователь лимита
-        SELECT COUNT(*)
-        INTO l_count
-        FROM USER_IMAGES
-        WHERE USER_ID = p_user_id;
-    
+        SELECT COUNT(*) INTO l_count FROM USER_IMAGES WHERE USER_ID = p_user_id;
         IF l_count >= l_image_limit THEN
-            RETURN 2; -- 2 означает "лимит достигнут"
+            RETURN 2;
         END IF;
-        -- --- КОНЕЦ НОВОГО КОДА ---
     
-        -- Проверяем, есть ли уже картинка с таким хешем (логика дубликатов)
-        SELECT COUNT(*)
-        INTO l_count
-        FROM USER_IMAGES
-        WHERE USER_ID = p_user_id AND IMAGE_HASH = p_image_hash;
-    
+        SELECT COUNT(*) INTO l_count FROM USER_IMAGES WHERE USER_ID = p_user_id AND IMAGE_HASH = p_image_hash;
         IF l_count > 0 THEN
-            RETURN 0; -- 0 означает "дубликат"
+            RETURN 0;
         END IF;
     
-        INSERT INTO USER_IMAGES (USER_ID, MIME_TYPE, IMAGE_DATA, IMAGE_HASH)
-        VALUES (p_user_id, p_mime_type, p_image_data, p_image_hash);
+        INSERT INTO USER_IMAGES (IMAGE_ID, USER_ID, MIME_TYPE, IMAGE_DATA, IMAGE_HASH)
+        VALUES (USER_IMAGES_SEQ.NEXTVAL, p_user_id, p_mime_type, p_image_data, p_image_hash);
     
         COMMIT;
-        RETURN 1; -- 1 означает "успешно загружено"
+        RETURN 1;
     EXCEPTION
         WHEN DUP_VAL_ON_INDEX THEN
             RETURN 0;
     END save_user_image;
 
-    FUNCTION get_user_images(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB AS
+    FUNCTION get_user_images(
+        p_user_id IN USERS.USER_ID%TYPE
+    ) RETURN CLOB
+    AS
         l_json CLOB;
     BEGIN
-        SELECT JSON_ARRAYAGG(JSON_OBJECT('id' VALUE IMAGE_ID) ORDER BY UPLOADED_AT DESC)
-        INTO l_json FROM USER_IMAGES WHERE USER_ID = p_user_id;
+        SELECT
+            JSON_ARRAYAGG(JSON_OBJECT('id' VALUE IMAGE_ID) ORDER BY UPLOADED_AT DESC)
+        INTO l_json
+        FROM USER_IMAGES
+        WHERE USER_ID = p_user_id;
+
         RETURN NVL(l_json, '[]');
     END get_user_images;
 
-    PROCEDURE get_user_image_data(p_image_id IN NUMBER, o_mime_type OUT VARCHAR2, o_image_data OUT BLOB) AS
-        l_owner_id NUMBER;
-        l_user_id NUMBER; -- Предполагаем, что ID текущего пользователя можно получить
+    PROCEDURE get_user_image_data(
+        p_image_id   IN NUMBER,
+        o_mime_type  OUT VARCHAR2,
+        o_image_data OUT BLOB
+    )
+    AS
     BEGIN
-        -- Этот блок требует способа получить ID текущего пользователя,
-        -- но для простоты реализуем прямой доступ, полагаясь на проверку в Python
         SELECT MIME_TYPE, IMAGE_DATA
         INTO o_mime_type, o_image_data
         FROM USER_IMAGES
         WHERE IMAGE_ID = p_image_id;
     END get_user_image_data;
     
-    FUNCTION get_default_images RETURN CLOB AS
+    FUNCTION get_default_images RETURN CLOB
+    AS
         l_json CLOB;
     BEGIN
-        SELECT JSON_ARRAYAGG(JSON_OBJECT('id' VALUE IMAGE_ID, 'name' VALUE IMAGE_NAME) ORDER BY IMAGE_ID)
-        INTO l_json FROM USER_IMAGES WHERE USER_ID IS NULL;
+        SELECT
+            JSON_ARRAYAGG(JSON_OBJECT('id' VALUE IMAGE_ID, 'name' VALUE 'Default') ORDER BY IMAGE_ID)
+        INTO l_json
+        FROM USER_IMAGES
+        WHERE USER_ID IS NULL;
+
         RETURN NVL(l_json, '[]');
     END get_default_images;
     
-    PROCEDURE get_default_image_data(p_image_id IN NUMBER, o_mime_type OUT VARCHAR2, o_image_data OUT BLOB) AS
+    PROCEDURE get_default_image_data(
+        p_image_id   IN NUMBER,
+        o_mime_type  OUT VARCHAR2,
+        o_image_data OUT BLOB
+    )
+    AS
     BEGIN
         SELECT MIME_TYPE, IMAGE_DATA
         INTO o_mime_type, o_image_data
@@ -441,48 +614,25 @@ END undo_move;
         WHERE IMAGE_ID = p_image_id AND USER_ID IS NULL;
     END get_default_image_data;
     
-    PROCEDURE delete_user_image(p_user_id IN USERS.USER_ID%TYPE, p_image_id IN USER_IMAGES.IMAGE_ID%TYPE) AS
+    PROCEDURE delete_user_image(
+        p_user_id  IN USERS.USER_ID%TYPE,
+        p_image_id IN USER_IMAGES.IMAGE_ID%TYPE
+    )
+    AS
     BEGIN
-        -- Удаляем картинку, только если она принадлежит текущему пользователю
-        -- Это ВАЖНО для безопасности!
         DELETE FROM USER_IMAGES
         WHERE IMAGE_ID = p_image_id AND USER_ID = p_user_id;
-    
         COMMIT;
     END delete_user_image;
 
     ----------------------------------------------------------------------------
-    -- РЕАЛИЗАЦИЯ СОЛВЕРА
+    -- РЕАЛИЗАЦИЯ: СОЛВЕР И ПОДСКАЗКИ
     ----------------------------------------------------------------------------
-    FUNCTION search(
-        p_path      IN OUT NOCOPY GAME_MANAGER_PKG.t_path, p_g_cost    IN NUMBER,
-        p_threshold IN NUMBER, o_solution  OUT NOCOPY GAME_MANAGER_PKG.t_path
-    ) RETURN NUMBER;
-    
-    FUNCTION get_hint(p_session_id IN GAMES.GAME_ID%TYPE) RETURN VARCHAR2 IS
-        l_session GAMES%ROWTYPE;
-        l_tile_to_move NUMBER;
-    BEGIN
-        SELECT * INTO l_session FROM GAMES WHERE GAME_ID = p_session_id;
-        l_tile_to_move := get_next_best_move(
-            p_board_state        => l_session.BOARD_STATE,
-            p_target_board_state => l_session.TARGET_STATE,
-            p_board_size_param   => l_session.BOARD_SIZE
-        );
-        RETURN JSON_OBJECT('hint' VALUE l_tile_to_move);
-    END get_hint;
-    
-    PROCEDURE init_target_positions(p_target_board GAME_MANAGER_PKG.t_board, p_size NUMBER) IS
-    BEGIN
-        g_board_size := p_size;
-        FOR i IN 1 .. p_target_board.COUNT LOOP
-            IF p_target_board(i) != 0 THEN
-                g_target_positions(p_target_board(i)) := i;
-            END IF;
-        END LOOP;
-    END init_target_positions;
-
-    FUNCTION is_state_in_path(p_path GAME_MANAGER_PKG.t_path, p_board GAME_MANAGER_PKG.t_board) RETURN BOOLEAN IS
+    FUNCTION is_state_in_path(
+        p_path  GAME_MANAGER_PKG.t_path,
+        p_board GAME_MANAGER_PKG.t_board
+    ) RETURN BOOLEAN
+    IS
     BEGIN
         FOR i IN 1 .. p_path.COUNT LOOP
             IF table_to_state(p_path(i).board_state) = table_to_state(p_board) THEN
@@ -491,36 +641,49 @@ END undo_move;
         END LOOP;
         RETURN FALSE;
     END is_state_in_path;
-
+    
     FUNCTION search(
-        p_path      IN OUT NOCOPY GAME_MANAGER_PKG.t_path, p_g_cost    IN NUMBER,
-        p_threshold IN NUMBER, o_solution  OUT NOCOPY GAME_MANAGER_PKG.t_path
-    ) RETURN NUMBER IS
-        l_current_node  GAME_MANAGER_PKG.t_node; l_f_cost        NUMBER;
-        l_min_f         NUMBER := 999999; l_empty_idx     PLS_INTEGER;
+        p_path      IN OUT NOCOPY GAME_MANAGER_PKG.t_path,
+        p_g_cost    IN NUMBER,
+        p_threshold IN NUMBER,
+        o_solution  OUT NOCOPY GAME_MANAGER_PKG.t_path
+    ) RETURN NUMBER
+    IS
+        l_current_node  GAME_MANAGER_PKG.t_node;
+        l_f_cost        NUMBER;
+        l_min_f         NUMBER := 999999;
+        l_empty_idx     PLS_INTEGER;
     BEGIN
         l_current_node := p_path(p_path.COUNT);
         l_f_cost := p_g_cost + l_current_node.h_cost;
         IF l_f_cost > p_threshold THEN RETURN l_f_cost; END IF;
         IF l_current_node.h_cost = 0 THEN o_solution := p_path; RETURN -1; END IF;
+        
         FOR i IN 1 .. l_current_node.board_state.COUNT LOOP
             IF l_current_node.board_state(i) = 0 THEN l_empty_idx := i; EXIT; END IF;
         END LOOP;
+        
         DECLARE
-            l_possible_moves GAME_MANAGER_PKG.t_board; k PLS_INTEGER := 1;
+            l_possible_moves GAME_MANAGER_PKG.t_board;
+            k PLS_INTEGER := 1;
         BEGIN
             IF l_empty_idx - g_board_size > 0 THEN l_possible_moves(k) := l_empty_idx - g_board_size; k := k + 1; END IF;
             IF l_empty_idx + g_board_size <= g_board_size*g_board_size THEN l_possible_moves(k) := l_empty_idx + g_board_size; k := k + 1; END IF;
             IF MOD(l_empty_idx - 1, g_board_size) > 0 THEN l_possible_moves(k) := l_empty_idx - 1; k := k + 1; END IF;
             IF MOD(l_empty_idx - 1, g_board_size) < g_board_size - 1 THEN l_possible_moves(k) := l_empty_idx + 1; END IF;
+            
             FOR i IN 1 .. l_possible_moves.COUNT LOOP
                 DECLARE
-                    l_next_board GAME_MANAGER_PKG.t_board; l_next_node  GAME_MANAGER_PKG.t_node;
-                    l_temp       NUMBER; l_res        NUMBER;
+                    l_next_board GAME_MANAGER_PKG.t_board;
+                    l_next_node  GAME_MANAGER_PKG.t_node;
+                    l_temp       NUMBER;
+                    l_res        NUMBER;
                 BEGIN
                     l_next_board := l_current_node.board_state;
                     l_temp := l_next_board(l_possible_moves(i));
-                    l_next_board(l_possible_moves(i)) := 0; l_next_board(l_empty_idx) := l_temp;
+                    l_next_board(l_possible_moves(i)) := 0;
+                    l_next_board(l_empty_idx) := l_temp;
+                    
                     IF NOT is_state_in_path(p_path, l_next_board) THEN
                         l_next_node.board_state := l_next_board;
                         l_next_node.g_cost := p_g_cost + 1;
@@ -541,12 +704,16 @@ END undo_move;
         p_board_state       IN VARCHAR2,
         p_target_board_state IN VARCHAR2,
         p_board_size_param  IN NUMBER
-    ) RETURN NUMBER AS
+    ) RETURN NUMBER
+    AS
         l_initial_board GAME_MANAGER_PKG.t_board := state_to_table(p_board_state);
         l_target_board  GAME_MANAGER_PKG.t_board := state_to_table(p_target_board_state);
-        l_path          GAME_MANAGER_PKG.t_path; l_solution      GAME_MANAGER_PKG.t_path;
-        l_initial_node  GAME_MANAGER_PKG.t_node; l_threshold     NUMBER;
-        l_result        NUMBER; l_start_time    NUMBER;
+        l_path          GAME_MANAGER_PKG.t_path;
+        l_solution      GAME_MANAGER_PKG.t_path;
+        l_initial_node  GAME_MANAGER_PKG.t_node;
+        l_threshold     NUMBER;
+        l_result        NUMBER;
+        l_start_time    NUMBER;
     BEGIN
         init_target_positions(l_target_board, p_board_size_param);
         l_initial_node.board_state := l_initial_board;
@@ -555,12 +722,14 @@ END undo_move;
         l_path(1) := l_initial_node;
         l_threshold := l_initial_node.h_cost;
         l_start_time := DBMS_UTILITY.GET_TIME;
+        
         LOOP
             l_result := search(l_path, 0, l_threshold, l_solution);
             IF l_result = -1 THEN EXIT; END IF;
             l_threshold := l_result;
-            IF (DBMS_UTILITY.GET_TIME - l_start_time) > 300 THEN RETURN NULL; END IF;
+            IF (DBMS_UTILITY.GET_TIME - l_start_time) > 300 THEN RETURN NULL; END IF; -- Timeout
         END LOOP;
+        
         IF l_solution.COUNT > 1 THEN
             DECLARE
                 l_board1 GAME_MANAGER_PKG.t_board := l_solution(1).board_state;
@@ -575,91 +744,180 @@ END undo_move;
         END IF;
         RETURN NULL;
     END get_next_best_move;
+    
+    FUNCTION get_hint(
+        p_session_id IN GAMES.GAME_ID%TYPE
+    ) RETURN VARCHAR2
+    IS
+        l_current_state VARCHAR2(1000);
+        l_game          GAMES%ROWTYPE;
+        l_target_state  VARCHAR2(1000);
+        l_tile_to_move  NUMBER;
+    BEGIN
+        SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id;
 
+        SELECT BOARD_STATE
+        INTO l_current_state
+        FROM MOVE_HISTORY
+        WHERE GAME_ID = p_session_id AND MOVE_ORDER = l_game.CURRENT_MOVE_ORDER;
+        
+        l_target_state := '';
+        FOR i IN 1..(l_game.BOARD_SIZE * l_game.BOARD_SIZE - 1) LOOP
+            l_target_state := l_target_state || i || ',';
+        END LOOP;
+        l_target_state := l_target_state || '0';
+        
+        l_tile_to_move := get_next_best_move(
+            p_board_state        => l_current_state,
+            p_target_board_state => l_target_state,
+            p_board_size_param   => l_game.BOARD_SIZE
+        );
+        RETURN JSON_OBJECT('hint' VALUE l_tile_to_move);
+    END get_hint;
+    
+    PROCEDURE init_target_positions(p_target_board GAME_MANAGER_PKG.t_board, p_size NUMBER) IS
+    BEGIN
+        g_board_size := p_size;
+        FOR i IN 1 .. p_target_board.COUNT LOOP
+            IF p_target_board(i) != 0 THEN
+                g_target_positions(p_target_board(i)) := i;
+            END IF;
+        END LOOP;
+    END init_target_positions;
+    
     ----------------------------------------------------------------------------
-    -- РЕАЛИЗАЦИЯ БЛОКА ПЛАНИРОВЩИКА
+    -- РЕАЛИЗАЦИЯ: ПЛАНИРОВЩИК ЕЖЕДНЕВНЫХ ИСПЫТАНИЙ
     ----------------------------------------------------------------------------
-    PROCEDURE create_daily_challenge AS
-        l_board_size    NUMBER; l_shuffle_moves NUMBER; l_target_state  VARCHAR2(1000);
-        l_shuffled_board VARCHAR2(1000); l_optimal_moves NUMBER;
-        l_board         GAME_MANAGER_PKG.t_board; l_empty_idx     PLS_INTEGER;
-        l_solution      GAME_MANAGER_PKG.t_path; l_next_day      DATE := TRUNC(SYSDATE) + 1;
-        l_count         NUMBER;
+    PROCEDURE create_daily_challenge
+    AS
+        l_board_size     NUMBER;
+        l_shuffle_moves  NUMBER;
+        l_shuffled_board VARCHAR2(1000);
+        l_optimal_moves  NUMBER;
+        l_next_day       DATE := TRUNC(SYSDATE) + 1;
+        l_count          NUMBER;
     BEGIN
         SELECT COUNT(*) INTO l_count FROM DAILY_CHALLENGES WHERE CHALLENGE_DATE = l_next_day;
         IF l_count > 0 THEN RETURN; END IF;
+        
         l_board_size := TRUNC(DBMS_RANDOM.VALUE(3, 5));
         IF l_board_size = 3 THEN l_shuffle_moves := TRUNC(DBMS_RANDOM.VALUE(20, 31));
         ELSE l_shuffle_moves := TRUNC(DBMS_RANDOM.VALUE(40, 71)); END IF;
-        l_target_state := '';
-        FOR i IN 1..(l_board_size * l_board_size - 1) LOOP l_target_state := l_target_state || i || ','; END LOOP;
-        l_target_state := l_target_state || '0';
-        LOOP
-            l_board := state_to_table(l_target_state); l_empty_idx := l_board_size * l_board_size;
-            FOR i IN 1..l_shuffle_moves LOOP
-                DECLARE
-                    l_possible_moves GAME_MANAGER_PKG.t_board; l_move_to_idx PLS_INTEGER;
-                    l_rand_move PLS_INTEGER; l_temp NUMBER; k PLS_INTEGER := 1;
-                BEGIN
-                    IF MOD(l_empty_idx - 1, l_board_size) > 0 THEN l_possible_moves(k) := l_empty_idx - 1; k := k + 1; END IF;
-                    IF MOD(l_empty_idx - 1, l_board_size) < l_board_size - 1 THEN l_possible_moves(k) := l_empty_idx + 1; k := k + 1; END IF;
-                    IF l_empty_idx - l_board_size > 0 THEN l_possible_moves(k) := l_empty_idx - l_board_size; k := k + 1; END IF;
-                    IF l_empty_idx + l_board_size <= l_board_size*l_board_size THEN l_possible_moves(k) := l_empty_idx + l_board_size; END IF;
-                    l_rand_move := TRUNC(DBMS_RANDOM.VALUE(1, l_possible_moves.COUNT + 1));
-                    l_move_to_idx := l_possible_moves(l_rand_move); l_temp := l_board(l_move_to_idx);
-                    l_board(l_move_to_idx) := l_board(l_empty_idx); l_board(l_empty_idx) := l_temp;
-                    l_empty_idx := l_move_to_idx;
-                END;
-            END LOOP;
-            l_shuffled_board := table_to_state(l_board);
-            EXIT WHEN l_shuffled_board != l_target_state;
-        END LOOP;
+        
         DECLARE
-            l_path GAME_MANAGER_PKG.t_path; l_initial_node GAME_MANAGER_PKG.t_node;
-            l_threshold NUMBER; l_result NUMBER;
+            l_target_state VARCHAR2(1000) := '';
         BEGIN
-            init_target_positions(state_to_table(l_target_state), l_board_size);
-            l_initial_node.board_state := state_to_table(l_shuffled_board);
-            l_initial_node.g_cost := 0; l_initial_node.h_cost := calculate_heuristic(l_initial_node.board_state);
-            l_path(1) := l_initial_node; l_threshold := l_initial_node.h_cost;
+            FOR i IN 1..(l_board_size * l_board_size - 1) LOOP l_target_state := l_target_state || i || ','; END LOOP;
+            l_target_state := l_target_state || '0';
+            
             LOOP
-                l_result := search(l_path, 0, l_threshold, l_solution);
-                IF l_result = -1 THEN EXIT; END IF;
-                l_threshold := l_result;
-                IF l_threshold > 80 THEN l_solution.DELETE; EXIT; END IF;
+                DECLARE
+                    l_board GAME_MANAGER_PKG.t_board := state_to_table(l_target_state);
+                    l_empty_idx PLS_INTEGER := l_board_size * l_board_size;
+                BEGIN
+                    FOR i IN 1..l_shuffle_moves LOOP
+                        DECLARE
+                            l_possible_moves GAME_MANAGER_PKG.t_board; l_move_to_idx PLS_INTEGER;
+                            l_rand_move PLS_INTEGER; l_temp NUMBER; k PLS_INTEGER := 1;
+                        BEGIN
+                            IF MOD(l_empty_idx - 1, l_board_size) > 0 THEN l_possible_moves(k) := l_empty_idx - 1; k := k + 1; END IF;
+                            IF MOD(l_empty_idx - 1, l_board_size) < l_board_size - 1 THEN l_possible_moves(k) := l_empty_idx + 1; k := k + 1; END IF;
+                            IF l_empty_idx - l_board_size > 0 THEN l_possible_moves(k) := l_empty_idx - l_board_size; k := k + 1; END IF;
+                            IF l_empty_idx + l_board_size <= l_board_size*l_board_size THEN l_possible_moves(k) := l_empty_idx + l_board_size; END IF;
+                            l_rand_move := TRUNC(DBMS_RANDOM.VALUE(1, l_possible_moves.COUNT + 1));
+                            l_move_to_idx := l_possible_moves(l_rand_move); l_temp := l_board(l_move_to_idx);
+                            l_board(l_move_to_idx) := l_board(l_empty_idx); l_board(l_empty_idx) := l_temp;
+                            l_empty_idx := l_move_to_idx;
+                        END;
+                    END LOOP;
+                    l_shuffled_board := table_to_state(l_board);
+                END;
+                EXIT WHEN l_shuffled_board != l_target_state;
             END LOOP;
-            l_optimal_moves := l_solution.COUNT - 1;
+        
+            DECLARE
+                l_path GAME_MANAGER_PKG.t_path; l_solution GAME_MANAGER_PKG.t_path; l_initial_node GAME_MANAGER_PKG.t_node;
+                l_threshold NUMBER; l_result NUMBER;
+            BEGIN
+                init_target_positions(state_to_table(l_target_state), l_board_size);
+                l_initial_node.board_state := state_to_table(l_shuffled_board);
+                l_initial_node.g_cost := 0; l_initial_node.h_cost := calculate_heuristic(l_initial_node.board_state);
+                l_path(1) := l_initial_node; l_threshold := l_initial_node.h_cost;
+                LOOP
+                    l_result := search(l_path, 0, l_threshold, l_solution);
+                    IF l_result = -1 THEN EXIT; END IF;
+                    l_threshold := l_result;
+                    IF l_threshold > 80 THEN l_solution.DELETE; EXIT; END IF;
+                END LOOP;
+                l_optimal_moves := l_solution.COUNT - 1;
+            END;
         END;
-        INSERT INTO DAILY_CHALLENGES (CHALLENGE_DATE, BOARD_SIZE, SHUFFLE_MOVES, TARGET_STATE, OPTIMAL_MOVES)
-        VALUES (l_next_day, l_board_size, l_shuffle_moves, l_target_state, l_optimal_moves);
+
+        -- ИСПРАВЛЕНИЕ: "TARGET_STATE" заменен на "BOARD_STATE"
+        INSERT INTO DAILY_CHALLENGES (CHALLENGE_DATE, BOARD_SIZE, SHUFFLE_MOVES, BOARD_STATE, OPTIMAL_MOVES)
+        VALUES (l_next_day, l_board_size, l_shuffle_moves, l_shuffled_board, l_optimal_moves);
         COMMIT;
     END create_daily_challenge;
 
     ----------------------------------------------------------------------------
-    -- РЕАЛИЗАЦИЯ ПРИВАТНЫХ УТИЛИТ
+    -- РЕАЛИЗАЦИЯ: ПРИВАТНЫЕ УТИЛИТЫ
     ----------------------------------------------------------------------------
-    FUNCTION get_game_state_json(p_game_id IN NUMBER) RETURN CLOB IS
-        l_json_clob CLOB; l_game GAMES%ROWTYPE;
+    FUNCTION get_game_state_json(
+        p_game_id IN NUMBER
+    ) RETURN CLOB
+    IS
+        l_json_clob           CLOB;
+        l_game                GAMES%ROWTYPE;
+        l_current_board_state VARCHAR2(1000);
+        l_image_url           VARCHAR2(256);
     BEGIN
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_game_id;
-        SELECT JSON_OBJECT(
-            'sessionId' VALUE l_game.GAME_ID, 'boardSize' VALUE l_game.BOARD_SIZE,
-            'boardState' VALUE JSON_QUERY('[' || l_game.BOARD_STATE || ']', '$'),
-            'moves' VALUE l_game.MOVE_COUNT, 'startTime' VALUE TO_CHAR(l_game.START_TIME, 'YYYY-MM-DD"T"HH24:MI:SS'),
-            'status' VALUE l_game.STATUS, 'imageUrl' VALUE l_game.IMAGE_URL, 'stars' VALUE l_game.STARS_EARNED,
-            'gameMode' VALUE l_game.GAME_MODE
-        ) INTO l_json_clob FROM dual;
-        RETURN l_json_clob;
-    EXCEPTION WHEN NO_DATA_FOUND THEN RETURN '{"status":"error", "message":"Session not found"}';
-    END get_game_state_json;
+        
+        SELECT BOARD_STATE
+        INTO l_current_board_state
+        FROM MOVE_HISTORY
+        WHERE GAME_ID = p_game_id AND MOVE_ORDER = l_game.CURRENT_MOVE_ORDER;
+        
+        IF l_game.IMAGE_ID IS NOT NULL THEN
+            l_image_url := '/api/image/' || l_game.IMAGE_ID;
+        ELSE
+            l_image_url := NULL;
+        END IF;
 
+        SELECT
+            JSON_OBJECT(
+                'sessionId'  VALUE l_game.GAME_ID,
+                'boardSize'  VALUE l_game.BOARD_SIZE,
+                'boardState' VALUE JSON_QUERY('[' || l_current_board_state || ']', '$'),
+                'moves'      VALUE l_game.MOVE_COUNT,
+                'startTime'  VALUE TO_CHAR(l_game.START_TIME, 'YYYY-MM-DD"T"HH24:MI:SS'),
+                'status'     VALUE l_game.STATUS,
+                'imageUrl'   VALUE l_image_url,
+                'stars'      VALUE l_game.STARS_EARNED,
+                'gameMode'   VALUE l_game.GAME_MODE
+            )
+        INTO l_json_clob
+        FROM dual;
+
+        RETURN l_json_clob;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RETURN '{"status":"error", "message":"Session not found"}';
+    END get_game_state_json;
+    
     FUNCTION calculate_heuristic(p_board GAME_MANAGER_PKG.t_board) RETURN NUMBER IS
-        l_heuristic NUMBER := 0; l_current_pos PLS_INTEGER; l_target_pos PLS_INTEGER;
-        l_current_row PLS_INTEGER; l_current_col PLS_INTEGER; l_target_row PLS_INTEGER; l_target_col PLS_INTEGER;
+        l_heuristic   NUMBER := 0;
+        l_current_pos PLS_INTEGER;
+        l_target_pos  PLS_INTEGER;
+        l_current_row PLS_INTEGER;
+        l_current_col PLS_INTEGER;
+        l_target_row  PLS_INTEGER;
+        l_target_col  PLS_INTEGER;
     BEGIN
         FOR i IN 1 .. p_board.COUNT LOOP
             IF p_board(i) != 0 THEN
-                l_current_pos := i; l_target_pos  := g_target_positions(p_board(i));
+                l_current_pos := i;
+                l_target_pos  := g_target_positions(p_board(i));
                 l_current_row := TRUNC((l_current_pos - 1) / g_board_size);
                 l_current_col := MOD(l_current_pos - 1, g_board_size);
                 l_target_row  := TRUNC((l_target_pos - 1) / g_board_size);
@@ -669,16 +927,20 @@ END undo_move;
         END LOOP;
         RETURN l_heuristic;
     END calculate_heuristic;
-
+    
     FUNCTION state_to_table(p_state IN VARCHAR2) RETURN GAME_MANAGER_PKG.t_board IS
-        l_string         VARCHAR2(32767) := p_state || ','; l_comma_index    PLS_INTEGER;
-        l_start_index    PLS_INTEGER := 1; l_result_table   GAME_MANAGER_PKG.t_board;
-        i                PLS_INTEGER := 1;
+        l_string       VARCHAR2(32767) := p_state || ',';
+        l_comma_index  PLS_INTEGER;
+        l_start_index  PLS_INTEGER := 1;
+        l_result_table GAME_MANAGER_PKG.t_board;
+        i              PLS_INTEGER := 1;
     BEGIN
         LOOP
-            l_comma_index := INSTR(l_string, ',', l_start_index); EXIT WHEN l_comma_index = 0;
+            l_comma_index := INSTR(l_string, ',', l_start_index);
+            EXIT WHEN l_comma_index = 0;
             l_result_table(i) := TO_NUMBER(SUBSTR(l_string, l_start_index, l_comma_index - l_start_index));
-            l_start_index := l_comma_index + 1; i := i + 1;
+            l_start_index := l_comma_index + 1;
+            i := i + 1;
         END LOOP;
         RETURN l_result_table;
     END state_to_table;
@@ -687,9 +949,10 @@ END undo_move;
         l_state VARCHAR2(32767);
     BEGIN
         IF p_table.COUNT = 0 THEN RETURN NULL; END IF;
-        FOR i IN p_table.FIRST..p_table.LAST LOOP l_state := l_state || p_table(i) || ','; END LOOP;
+        FOR i IN p_table.FIRST..p_table.LAST LOOP
+            l_state := l_state || p_table(i) || ',';
+        END LOOP;
         RETURN RTRIM(l_state, ',');
     END table_to_state;
-
+    
 END GAME_MANAGER_PKG;
-/
