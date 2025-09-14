@@ -9,11 +9,15 @@ import oracledb
 import json
 import hashlib
 from flask import Flask, request, jsonify, render_template, session, Response
-from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # --- Подключение к базе данных ---
 # Замените на ваши учетные данные, если они отличаются
@@ -96,7 +100,7 @@ def handle_action():
     try:
         result_clob = None
         user_id = session.get('user_id')
-        game_session_id = session.get('game_session_id')
+        game_session_id = session.get('game_session_id') or params.get('sessionId')
 
         if action == 'start':
             # --- НАЧАЛО ИЗМЕНЕНИЯ ---
@@ -142,7 +146,12 @@ def handle_action():
             cursor.callproc('GAME_MANAGER_PKG.abandon_game', [game_session_id])
             session.pop('game_session_id', None)
             return jsonify({"success": True})
-            
+        
+        elif action == 'timeout':
+            cursor.callproc('GAME_MANAGER_PKG.timeout_game', [game_session_id])
+            session.pop('game_session_id', None)
+            return jsonify({"success": True})
+        
         elif action == 'hint':
             # callfunc возвращает строку, которую нужно вернуть как JSON
             result_json_str = cursor.callfunc('GAME_MANAGER_PKG.get_hint', str, [game_session_id])
@@ -160,6 +169,9 @@ def handle_action():
         elif action == 'get_user_images':
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_user_images', oracledb.DB_TYPE_CLOB, [user_id])
 
+        elif action == 'get_user_stats':
+            result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_user_stats', oracledb.DB_TYPE_CLOB, [user_id])
+            
         elif action == 'delete_image':
             image_id_to_delete = params.get('imageId')
             if image_id_to_delete:
@@ -186,7 +198,7 @@ def upload_image():
     file = request.files['image']
     if file.filename == '': return jsonify({'error': 'No selected file'}), 400
 
-    if file:
+    if file and allowed_file(file.filename):
         image_data = file.read()
         mime_type = file.mimetype
         image_hash = hashlib.sha256(image_data).hexdigest().upper()
@@ -213,7 +225,7 @@ def upload_image():
             cursor.close()
             pool.release(conn)
         
-    return jsonify({'error': 'File upload failed'}), 500
+    return jsonify({'success': False, 'error': 'Недопустимый тип файла. Разрешены только JPG и PNG.'}), 400
 
 @app.route('/api/image/<int:image_id>')
 def get_image_data(image_id):

@@ -47,15 +47,14 @@ def load_default_images():
                             print(f"Обработка файла: {filename}...")
 
                             # --- ИСПРАВЛЕННЫЙ ЗАПРОС ---
-                            # Используем MERGE для безопасной вставки по ХЕШУ
-                            # Он вставит запись, только если картинки с таким хешем и USER_ID IS NULL еще нет
+                            # Добавлено поле UPLOADED_AT со значением SYSDATE, чтобы избежать ошибки ORA-01400
                             sql_merge = """
                                 MERGE INTO user_images t
                                 USING (SELECT :hash AS image_hash FROM dual) s
                                 ON (t.image_hash = s.image_hash AND t.user_id IS NULL)
                                 WHEN NOT MATCHED THEN
-                                    INSERT (image_id, user_id, mime_type, image_data, image_hash)
-                                    VALUES (USER_IMAGES_SEQ.NEXTVAL, NULL, :mime, :data, :hash)
+                                    INSERT (image_id, user_id, mime_type, image_data, image_hash, uploaded_at)
+                                    VALUES (USER_IMAGES_SEQ.NEXTVAL, NULL, :mime, :data, :hash, SYSDATE)
                             """
                             
                             cursor.execute(sql_merge, {

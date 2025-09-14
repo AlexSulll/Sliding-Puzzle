@@ -9,6 +9,17 @@
     <link rel="icon" href="{{ url_for('static', filename='../static/css/logo.png') }}" type="image/png">
 </head>
 <body>
+
+    <div id="user-stats-panel" class="hidden">
+        <h3><i class="fas fa-chart-bar"></i> Моя статистика</h3>
+        <ul>
+            <li><strong>Игрок:</strong> <span id="stats-username"></span></li>
+            <li><strong>Всего звёзд:</strong> <span id="stats-stars"></span></li>
+            <li><strong>Лучшее время:</strong> <span id="stats-best-time"></span></li>
+            <li><strong>Мин. ходов:</strong> <span id="stats-best-moves"></span></li>
+        </ul>
+    </div>
+
     <div class="main-container">
         <header class="main-header">
             <h1>Пятнашки</h1>
@@ -96,7 +107,7 @@
                             </div>
 
                             <label for="image-upload" class="btn btn-secondary"><i class="fas fa-upload"></i> Загрузить свою</g>
-                            <input type="file" id="image-upload" class="hidden" accept="image/*">
+                            <input type="file" id="image-upload" class="hidden" accept="image/png, image/jpeg">
                             <p id="custom-image-name"></p>
                         </div>
                         

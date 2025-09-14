@@ -370,3 +370,74 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: 25px 0; }
 .status-abandoned {
     color: #6c757d; /* secondary-color */
 }
+
+/* --- Стили для панели статистики --- */
+#user-stats-panel {
+    position: fixed; /* Прикрепляем к окну браузера */
+    top: 20px;
+    left: 20px;
+    width: 260px; /* Задаем фиксированную ширину */
+    background-color: var(--container-bg); /* Используем фон как у основного контейнера */
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 15px 20px;
+    text-align: left;
+    box-shadow: var(--shadow); /* Используем основную тень */
+    z-index: 1000; /* Размещаем поверх всех элементов */
+    transition: transform 0.3s ease;
+}
+
+#user-stats-panel.hidden {
+    transform: translateX(-150%); /* Прячем панель за пределы экрана */
+}
+
+#user-stats-panel h3 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 1.1rem;
+    color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+#user-stats-panel ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr; /* В одну колонку для вертикального вида */
+    gap: 8px;
+}
+
+#user-stats-panel li {
+    font-size: 0.95rem;
+}
+
+#user-stats-panel li strong {
+    color: #4a5568;
+}
+
+/* Адаптивность для маленьких экранов */
+@media (max-width: 900px) {
+    #user-stats-panel {
+        position: static; /* Возвращаем в обычный поток документа */
+        width: auto;
+        margin: 20px;
+        transform: none !important; /* Отключаем анимацию скрытия */
+    }
+
+    #user-stats-panel.hidden {
+        display: none !important; /* Просто скрываем на мобильных, если не залогинен */
+    }
+
+    /* Нужно поправить основной контейнер, чтобы он не прилипал к статистике */
+    .main-container {
+        margin-top: 0;
+    }
+}
+
+.status-timeout {
+    color: #e53e3e; /* danger-color */
+    font-weight: bold;
+}

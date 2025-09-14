@@ -5,10 +5,11 @@ document.addEventListener('DOMContentLoaded', () => {
         timerInterval: null,
         startTime: null,
         totalSeconds: 0,
-        // --- ИЗМЕНЕНО 1: Начальное состояние теперь 'INTS' ---
         gameMode: 'INTS',
         imageUrl: null,
         isDaily: false,
+        currentBoardState: [],
+        boardSize: 0,
     };
 
     const DOMElements = {
@@ -62,7 +63,12 @@ document.addEventListener('DOMContentLoaded', () => {
         filterDifficulty: document.getElementById('filter-difficulty'),
         applyFiltersBtn: document.getElementById('apply-filters-btn'),
         historyScreen: document.getElementById('history-screen'),
-        historyTableContainer: document.getElementById('history-table-container')
+        historyTableContainer: document.getElementById('history-table-container'),
+        userStatsPanel: document.getElementById('user-stats-panel'),
+        statsUsername: document.getElementById('stats-username'),
+        statsStars: document.getElementById('stats-stars'),
+        statsBestTime: document.getElementById('stats-best-time'),
+        statsBestMoves: document.getElementById('stats-best-moves')
     };
 
     // === API Module: Simplified with a single action endpoint ===
@@ -99,10 +105,11 @@ document.addEventListener('DOMContentLoaded', () => {
         hashPassword: (password) => CryptoJS.SHA256(password).toString(CryptoJS.enc.Hex).toUpperCase(),
         handleLogin: async (event) => { event.preventDefault(); const username = document.getElementById('login-username').value.trim(); const password = document.getElementById('login-password').value; if (!username || !password) return; const response = await api.login(username, auth.hashPassword(password)); if (response && response.success) auth.onLoginSuccess(response.user); },
         handleRegister: async (event) => { event.preventDefault(); const username = document.getElementById('register-username').value.trim(); const password = document.getElementById('register-password').value; if (!username || !password) return; const response = await api.register(username, auth.hashPassword(password)); if (response && response.success) auth.onLoginSuccess(response.user); },
-        handleLogout: async () => { await api.logout(); state.currentUser = null; ui.updateLoginState(); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); },
+        handleLogout: async () => { await api.logout(); state.currentUser = null; ui.updateLoginState(); if (DOMElements.userStatsPanel) DOMElements.userStatsPanel.classList.add('hidden'); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); },
         onLoginSuccess: (userData) => {
             state.currentUser = userData;
             ui.loadImages();
+            ui.renderUserStats();
             ui.updateLoginState();
             ui.showScreen('settings');
             DOMElements.authError.textContent = '';
@@ -138,11 +145,34 @@ document.addEventListener('DOMContentLoaded', () => {
         redo: async () => { const gameState = await api.performAction('redo'); if (gameState) ui.render(gameState); },
         abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.showScreen('settings'); },
         playAgain: () => { timer.stop(); ui.showScreen('settings'); },
-        hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } }
+        hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
+        timeout: async () => { await api.performAction('timeout'); timer.stop(); ui.showScreen('settings'); },
     };
     
     // === UI Module: Handles all DOM manipulation ===
     const ui = {
+        formatTime: (totalSeconds) => {
+            if (!totalSeconds || totalSeconds === 0) return '—';
+            const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+            const seconds = String(totalSeconds % 60).padStart(2, '0');
+            return `${minutes}:${seconds}`;
+        },
+        
+        // --- ИСПРАВЛЕНО: Добавлена проверка на существование панели статистики ---
+        renderUserStats: async () => {
+            // Убедимся, что панель есть на странице, прежде чем что-то делать
+            if (!DOMElements.userStatsPanel) {
+                return;
+            }
+            const stats = await api.performAction('get_user_stats');
+            if (stats) {
+                DOMElements.statsUsername.textContent = stats.username;
+                DOMElements.statsStars.textContent = `${stats.total_stars} ★`;
+                DOMElements.statsBestTime.textContent = ui.formatTime(stats.best_time);
+                DOMElements.statsBestMoves.textContent = stats.best_moves > 0 ? stats.best_moves : '—';
+                DOMElements.userStatsPanel.classList.remove('hidden');
+            }
+        },
         loadImages: async () => {
             DOMElements.defaultImagePreviews.innerHTML = '';
             DOMElements.userImagePreviews.innerHTML = '';
@@ -215,6 +245,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const MAX_FILE_SIZE_MB = 5;
             const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+            const allowedTypes = ['image/jpeg', 'image/png'];
+
+            if (!allowedTypes.includes(file.type)) {
+                DOMElements.customImageName.textContent = 'Ошибка: Разрешены только JPG и PNG.';
+                event.target.value = '';
+                return;
+            }
 
             if (file.size > MAX_FILE_SIZE_BYTES) {
                 DOMElements.customImageName.textContent = `Ошибка: Файл слишком большой (макс. ${MAX_FILE_SIZE_MB} МБ).`;
@@ -254,17 +291,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const { boardSize, boardState, moves, status, imageUrl, gameMode, stars } = gameState;
             state.gameMode = gameMode;
             state.imageUrl = imageUrl;
+            state.currentBoardState = boardState;
+            state.boardSize = boardSize;
             DOMElements.movesCounter.textContent = moves;
             if (status === 'SOLVED') {
                 timer.stop();
                 DOMElements.winMoves.textContent = moves;
                 const timeElapsed = Math.floor((new Date() - state.startTime) / 1000);
-                const minutes = String(Math.floor(timeElapsed / 60)).padStart(2, '0');
-                const seconds = String(timeElapsed % 60).padStart(2, '0');
-                DOMElements.winTime.textContent = `${minutes}:${seconds}`;
+                DOMElements.winTime.textContent = ui.formatTime(timeElapsed);
                 DOMElements.winStars.innerHTML = (stars > 0) ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : 'Решено';
                 DOMElements.activeGameView.classList.add('hidden');
                 DOMElements.winOverlay.classList.remove('hidden');
+                ui.renderUserStats();
             } else {
                 DOMElements.activeGameView.classList.remove('hidden');
                 DOMElements.winOverlay.classList.add('hidden');
@@ -309,7 +347,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 table.appendChild(thead); table.appendChild(tbody); container.appendChild(table);
                 return container;
             };
-            DOMElements.leaderboardTables.appendChild(createTable('Топ игроков по звездам', ['Игрок', 'Всего звёзд'], data.leaderboard, ['user', 'total_stars']));
+            const headers = ['Игрок', 'Звёзды', 'Решено', 'Не завершено'];
+            const columns = ['user', 'total_stars', 'solved_games', 'unfinished_games'];
+            DOMElements.leaderboardTables.appendChild(createTable('Топ игроков', headers, data.leaderboard, columns));
         },
         renderGameHistory: async () => {
             const historyData = await api.performAction('get_game_history');
@@ -327,13 +367,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const tbody = table.querySelector('tbody');
 
             historyData.forEach(game => {
-                const minutes = String(Math.floor(game.time / 60)).padStart(2, '0');
-                const seconds = String(game.time % 60).padStart(2, '0');
-                const timeStr = `${minutes}:${seconds}`;
+                const timeStr = ui.formatTime(game.time);
+                let statusText = '';
 
-                const statusText = game.status === 'SOLVED' 
-                    ? (game.stars > 0 ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` : 'Решено')
-                    : '<span class="status-abandoned">Сдался</span>';
+                if (game.status === 'SOLVED') {
+                    statusText = game.stars > 0 ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` : 'Решено';
+                } else if (game.status === 'ABANDONED') {
+                    statusText = '<span class="status-abandoned">Сдался</span>';
+                } else if (game.status === 'TIMEOUT') {
+                    statusText = '<span class="status-timeout">Время вышло</span>';
+                }
 
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -364,12 +407,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     DOMElements.timerDisplay.textContent = '00:00';
                     timer.stop();
                     alert('Время вышло!');
-                    game.abandon();
+                    game.timeout();
                     return;
                 }
-                const minutes = String(Math.floor(timeRemaining / 60)).padStart(2, '0');
-                const seconds = String(timeRemaining % 60).padStart(2, '0');
-                DOMElements.timerDisplay.textContent = `${minutes}:${seconds}`;
+                DOMElements.timerDisplay.textContent = ui.formatTime(timeRemaining);
             }, 1000);
         },
         stop: () => { if (state.timerInterval) clearInterval(state.timerInterval); state.timerInterval = null; }
@@ -387,7 +428,6 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.modeRadios.forEach(radio => radio.addEventListener('change', (e) => {
             state.gameMode = e.target.value;
             DOMElements.imageSelection.classList.toggle('hidden', state.gameMode !== 'IMAGE');
-            // --- ИЗМЕНЕНО 2: Проверка теперь на 'INTS' ---
             if (state.gameMode === 'INTS') {
                 state.imageUrl = null;
                 document.querySelectorAll('.preview-img.selected').forEach(img => img.classList.remove('selected'));
@@ -411,10 +451,33 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         document.addEventListener('keydown', (e) => {
-            if(DOMElements.gameScreen.classList.contains('active')) {
-                if(e.key.toLowerCase() === 'h') game.hint();
-                if(e.key.toLowerCase() === 'u' && !e.shiftKey) { e.preventDefault(); game.undo(); }
-                if(e.key.toLowerCase() === 'u' && e.shiftKey) { e.preventDefault(); game.redo(); }
+            if (!DOMElements.gameScreen.classList.contains('active')) return;
+            if(e.key.toLowerCase() === 'h') { e.preventDefault(); game.hint(); }
+            if(e.key.toLowerCase() === 'u' && !e.shiftKey) { e.preventDefault(); game.undo(); }
+            if(e.key.toLowerCase() === 'r' || (e.key.toLowerCase() === 'u' && e.shiftKey)) { e.preventDefault(); game.redo(); }
+
+            const emptyIndex = state.currentBoardState.indexOf(0);
+            if (emptyIndex === -1) return;
+
+            let targetIndex = -1;
+            const size = state.boardSize;
+
+            if (e.key === 'ArrowUp' && emptyIndex < size * (size - 1)) { // Двигаем плитку снизу вверх (на пустое место)
+                targetIndex = emptyIndex + size;
+            } else if (e.key === 'ArrowDown' && emptyIndex >= size) { // Двигаем плитку сверху вниз
+                targetIndex = emptyIndex - size;
+            } else if (e.key === 'ArrowLeft' && (emptyIndex % size) < (size - 1)) { // Двигаем плитку справа налево
+                targetIndex = emptyIndex + 1;
+            } else if (e.key === 'ArrowRight' && (emptyIndex % size) > 0) { // Двигаем плитку слева направо
+                targetIndex = emptyIndex - 1;
+            }
+
+            if (targetIndex !== -1) {
+                e.preventDefault();
+                const tileValue = state.currentBoardState[targetIndex];
+                if (tileValue) {
+                    game.move(tileValue);
+                }
             }
         });
         DOMElements.userImagePreviews.addEventListener('click', async (event) => {

@@ -68,6 +68,9 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_session_id IN GAMES.GAME_ID%TYPE
     );
     
+    PROCEDURE timeout_game(
+        p_session_id IN GAMES.GAME_ID%TYPE
+    );
     ----------------------------------------------------------------------------
     -- API: БЛОК ПОДСКАЗОК, РЕЙТИНГОВ И ИЗОБРАЖЕНИЙ
     ----------------------------------------------------------------------------
@@ -118,6 +121,10 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
     -- API: БЛОК ДЛЯ ПЛАНИРОВЩИКА
     ----------------------------------------------------------------------------
     PROCEDURE create_daily_challenge;
+    
+    FUNCTION get_user_stats(
+        p_user_id IN USERS.USER_ID%TYPE
+    ) RETURN CLOB;
 
 END GAME_MANAGER_PKG;
 /
@@ -383,26 +390,42 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     PROCEDURE abandon_game(p_session_id IN GAMES.GAME_ID%TYPE) 
     AS
         l_duration   NUMBER;
-        l_start_time DATE; -- ИЗМЕНЕНО: TIMESTAMP на DATE
+        l_start_time DATE;
     BEGIN
         SELECT START_TIME INTO l_start_time FROM GAMES WHERE GAME_ID = p_session_id;
-        -- ИЗМЕНЕНО: Логика вычисления длительности для типа DATE
         l_duration := ROUND((SYSDATE - l_start_time) * 86400);
 
         UPDATE GAMES
         SET STATUS = 'ABANDONED',
-            -- ИЗМЕНЕНО: CURRENT_TIMESTAMP на SYSDATE
             COMPLETED_AT = SYSDATE,
-            DURATION_SECONDS = l_duration,
-            CURRENT_MOVE_ORDER = null
+            DURATION_SECONDS = l_duration
         WHERE GAME_ID = p_session_id;
 
-        -- После завершения игры история ходов больше не нужна для UNDO/REDO
         DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
 
         COMMIT;
     END abandon_game;
     
+    PROCEDURE timeout_game(p_session_id IN GAMES.GAME_ID%TYPE)
+    AS
+        l_game GAMES%ROWTYPE;
+    BEGIN
+        SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id;
+
+        UPDATE GAMES
+        SET STATUS = 'TIMEOUT',
+            COMPLETED_AT = l_game.START_TIME + (l_game.DURATION_SECONDS / 86400),
+            -- DURATION_SECONDS уже установлено при старте, его не трогаем
+            STARS_EARNED = 0
+        WHERE GAME_ID = p_session_id;
+
+        DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
+        COMMIT;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            NULL; -- Игра уже могла быть завершена, ничего страшного
+    END timeout_game;
+
     FUNCTION process_move(
         p_session_id IN GAMES.GAME_ID%TYPE, 
         p_tile_value IN NUMBER
@@ -582,60 +605,72 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     FUNCTION get_leaderboards(
         p_filter_size       IN NUMBER,
         p_filter_difficulty IN NUMBER
-    ) RETURN CLOB 
-    AS 
-        l_json  CLOB; 
-        l_query VARCHAR2(4000); 
-    BEGIN 
-        l_query := 'SELECT JSON_ARRAYAGG(JSON_OBJECT(''user'' VALUE u.USERNAME, ''total_stars'' VALUE SUM(a.STARS_EARNED)) ORDER BY SUM(a.STARS_EARNED) DESC RETURNING CLOB) FROM GAMES a JOIN USERS u ON a.USER_ID = u.USER_ID WHERE a.STATUS = ''SOLVED'' '; 
-        
-        IF p_filter_size > 0 THEN 
-            l_query := l_query || ' AND a.BOARD_SIZE = :1'; 
-        END IF; 
-        
-        IF p_filter_difficulty > 0 THEN 
-            IF INSTR(l_query, ':1') > 0 THEN 
-                l_query := l_query || ' AND a.SHUFFLE_MOVES = :2'; 
-            ELSE 
-                l_query := l_query || ' AND a.SHUFFLE_MOVES = :1'; 
-            END IF; 
-        END IF; 
-        
-        l_query := l_query || ' GROUP BY u.USERNAME'; 
-        
-        IF p_filter_size > 0 AND p_filter_difficulty > 0 THEN 
-            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_difficulty; 
-        ELSIF p_filter_size > 0 THEN 
-            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size; 
-        ELSIF p_filter_difficulty > 0 THEN 
-            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_difficulty; 
-        ELSE 
-            EXECUTE IMMEDIATE l_query INTO l_json; 
-        END IF; 
-        
-        RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$')); 
+    ) RETURN CLOB
+    AS
+        l_json  CLOB;
+        l_query VARCHAR2(4000);
+    BEGIN
+        l_query := '
+            SELECT JSON_ARRAYAGG(
+                JSON_OBJECT(
+                    ''user'' VALUE u.USERNAME,
+                    ''total_stars'' VALUE NVL(SUM(g.STARS_EARNED), 0),
+                    ''solved_games'' VALUE COUNT(CASE WHEN g.STATUS = ''SOLVED'' THEN 1 END),
+                    ''unfinished_games'' VALUE COUNT(CASE WHEN g.STATUS IN (''ABANDONED'', ''TIMEOUT'') THEN 1 END)
+                ) ORDER BY NVL(SUM(g.STARS_EARNED), 0) DESC, COUNT(CASE WHEN g.STATUS = ''SOLVED'' THEN 1 END) DESC
+                RETURNING CLOB
+            )
+            FROM USERS u
+            LEFT JOIN GAMES g ON u.USER_ID = g.USER_ID
+            WHERE 1=1 ';
+
+        IF p_filter_size > 0 THEN
+            l_query := l_query || ' AND g.BOARD_SIZE = :1';
+        END IF;
+
+        IF p_filter_difficulty > 0 THEN
+            l_query := l_query || ' AND g.SHUFFLE_MOVES = :2';
+        END IF;
+
+        l_query := l_query || ' GROUP BY u.USERNAME';
+
+        -- Исправленная логика выполнения динамического запроса
+        IF p_filter_size > 0 AND p_filter_difficulty > 0 THEN
+            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_difficulty;
+        ELSIF p_filter_size > 0 THEN
+            l_query := REPLACE(l_query, ':2', 'NULL'); -- Сначала заменяем
+            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size; -- Потом выполняем
+        ELSIF p_filter_difficulty > 0 THEN
+            l_query := REPLACE(l_query, ':1', 'NULL'); -- Сначала заменяем
+            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_difficulty; -- Потом выполняем
+        ELSE
+            l_query := REPLACE(REPLACE(l_query, ':1', 'NULL'), ':2', 'NULL'); -- Сначала заменяем
+            EXECUTE IMMEDIATE l_query INTO l_json; -- Потом выполняем
+        END IF;
+
+        RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'));
     END get_leaderboards;
     
-    FUNCTION get_game_history(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB 
-    AS 
-        l_json CLOB; 
-    BEGIN 
-        SELECT JSON_ARRAYAGG( 
-            JSON_OBJECT( 
-                'gameId' VALUE g.GAME_ID, 
-                'date'   VALUE TO_CHAR(g.START_TIME, 'DD.MM.YYYY HH24:MI'), 
-                'size'   VALUE g.BOARD_SIZE, 
-                'moves'  VALUE g.MOVE_COUNT, 
-                'time'   VALUE g.DURATION_SECONDS, 
-                'status' VALUE g.STATUS, 
-                'stars'  VALUE g.STARS_EARNED 
-            ) ORDER BY g.START_TIME DESC 
-        ) 
-        INTO l_json 
-        FROM GAMES g 
-        WHERE g.USER_ID = p_user_id AND g.STATUS IN ('SOLVED', 'ABANDONED'); 
-        
-        RETURN NVL(l_json, '[]'); 
+    FUNCTION get_game_history(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB
+    AS
+        l_json CLOB;
+    BEGIN
+        SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+                'gameId' VALUE g.GAME_ID,
+                'date'   VALUE TO_CHAR(g.START_TIME, 'DD.MM.YYYY HH24:MI'),
+                'size'   VALUE g.BOARD_SIZE,
+                'moves'  VALUE g.MOVE_COUNT,
+                'time'   VALUE g.DURATION_SECONDS,
+                'status' VALUE g.STATUS,
+                'stars'  VALUE g.STARS_EARNED
+            ) ORDER BY g.START_TIME DESC
+        )
+        INTO l_json
+        FROM GAMES g
+        WHERE g.USER_ID = p_user_id AND g.STATUS IN ('SOLVED', 'ABANDONED', 'TIMEOUT');
+
+        RETURN NVL(l_json, '[]');
     END get_game_history;
 
     FUNCTION save_user_image(
@@ -1059,9 +1094,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 EXIT; 
             END IF;
             l_threshold := l_result;
-            IF (DBMS_UTILITY.GET_TIME - l_start_time) > 300 THEN 
-                RETURN NULL; -- Timeout
-            END IF; 
         END LOOP;
         
         IF l_solution.COUNT > 1 THEN
@@ -1090,5 +1122,56 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         END LOOP;
     END init_target_positions;
 
+    FUNCTION get_user_stats(
+        p_user_id IN USERS.USER_ID%TYPE
+    ) RETURN CLOB
+    AS
+        l_username      USERS.USERNAME%TYPE;
+        l_total_stars   NUMBER;
+        l_best_time     NUMBER;
+        l_best_moves    NUMBER;
+        l_json_clob     CLOB;
+    BEGIN
+        -- Получаем имя пользователя
+        SELECT USERNAME INTO l_username FROM USERS WHERE USER_ID = p_user_id;
+
+        -- Получаем статистику из решенных игр
+        SELECT
+            NVL(SUM(STARS_EARNED), 0),
+            NVL(MIN(CASE WHEN STATUS = 'SOLVED' THEN DURATION_SECONDS END), 0),
+            NVL(MIN(CASE WHEN STATUS = 'SOLVED' THEN MOVE_COUNT END), 0)
+        INTO
+            l_total_stars,
+            l_best_time,
+            l_best_moves
+        FROM GAMES
+        WHERE USER_ID = p_user_id AND STATUS = 'SOLVED';
+
+        -- Формируем JSON-ответ
+        SELECT JSON_OBJECT(
+            'username'    VALUE l_username,
+            'total_stars' VALUE l_total_stars,
+            'best_time'   VALUE l_best_time,
+            'best_moves'  VALUE l_best_moves
+        )
+        INTO l_json_clob
+        FROM DUAL;
+        
+        RETURN l_json_clob;
+
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            -- Если у пользователя еще нет игр, возвращаем пустые данные
+            SELECT JSON_OBJECT(
+                'username'    VALUE l_username,
+                'total_stars' VALUE 0,
+                'best_time'   VALUE 0,
+                'best_moves'  VALUE 0
+            )
+            INTO l_json_clob
+            FROM DUAL;
+            RETURN l_json_clob;
+    END get_user_stats;
+    
 END GAME_MANAGER_PKG;
 /
