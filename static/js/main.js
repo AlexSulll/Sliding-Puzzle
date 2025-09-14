@@ -5,7 +5,8 @@ document.addEventListener('DOMContentLoaded', () => {
         timerInterval: null,
         startTime: null,
         totalSeconds: 0,
-        gameMode: 'NUMBERS',
+        // --- ИЗМЕНЕНО 1: Начальное состояние теперь 'INTS' ---
+        gameMode: 'INTS',
         imageUrl: null,
         isDaily: false,
     };
@@ -142,13 +143,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // === UI Module: Handles all DOM manipulation ===
     const ui = {
-        // --- THIS IS THE CORRECTED FUNCTION ---
         loadImages: async () => {
-            // 1. Clear the containers
             DOMElements.defaultImagePreviews.innerHTML = '';
             DOMElements.userImagePreviews.innerHTML = '';
 
-            // 2. Load and display default images
             const defaultImages = await api.performAction('get_default_images');
             if (defaultImages && defaultImages.length > 0) {
                 defaultImages.forEach(imgData => {
@@ -157,14 +155,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
-            // 3. Load user images
             const userImages = await api.performAction('get_user_images');
 
-            // 4. Display user images
             if (userImages && userImages.length > 0) {
                 userImages.forEach(imgData => {
-                    // --- ИСПРАВЛЕНО ---
-                    // Вызываем функцию, которая создает и картинку, и кнопку удаления
                     const altText = `User image ${imgData.id}`;
                     const imgContainer = ui.createUserPreviewImage(imgData.id, altText);
                     DOMElements.userImagePreviews.appendChild(imgContainer);
@@ -173,7 +167,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 DOMElements.userImagePreviews.innerHTML = '<p class="no-images-msg">Вы еще не загружали картинок.</p>';
             }
 
-            // 5. Check the limit AFTER loading user images
             const imageLimit = 7;
             if (userImages && userImages.length >= imageLimit) {
                 DOMElements.uploadLabel.classList.add('hidden');
@@ -220,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const file = event.target.files[0];
             if (!file) return;
 
-            const MAX_FILE_SIZE_MB = 70;
+            const MAX_FILE_SIZE_MB = 5;
             const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
             if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -321,7 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderGameHistory: async () => {
             const historyData = await api.performAction('get_game_history');
             const container = DOMElements.historyTableContainer;
-            container.innerHTML = ''; // Очищаем контейнер
+            container.innerHTML = ''; 
 
             if (!historyData || historyData.length === 0) {
                 container.innerHTML = '<p>Вы еще не сыграли ни одной игры.</p>';
@@ -339,7 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const timeStr = `${minutes}:${seconds}`;
 
                 const statusText = game.status === 'SOLVED' 
-                    ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` 
+                    ? (game.stars > 0 ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` : 'Решено')
                     : '<span class="status-abandoned">Сдался</span>';
 
                 const row = document.createElement('tr');
@@ -391,11 +384,11 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.showLoginLink.addEventListener('click', (e) => { e.preventDefault(); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); DOMElements.authError.textContent = ''; });
         DOMElements.navButtons.forEach(btn => btn.addEventListener('click', () => ui.showScreen(btn.dataset.screen)));
         DOMElements.dailyCheck.addEventListener('change', (e) => { state.isDaily = e.target.checked; DOMElements.regularSettings.classList.toggle('hidden', state.isDaily); });
-        // Внутри функции init()
         DOMElements.modeRadios.forEach(radio => radio.addEventListener('change', (e) => {
             state.gameMode = e.target.value;
             DOMElements.imageSelection.classList.toggle('hidden', state.gameMode !== 'IMAGE');
-            if (state.gameMode === 'NUMBERS') {
+            // --- ИЗМЕНЕНО 2: Проверка теперь на 'INTS' ---
+            if (state.gameMode === 'INTS') {
                 state.imageUrl = null;
                 document.querySelectorAll('.preview-img.selected').forEach(img => img.classList.remove('selected'));
             }
@@ -425,27 +418,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         DOMElements.userImagePreviews.addEventListener('click', async (event) => {
-            console.log("1. Клик по контейнеру картинок. Цель клика:", event.target);
-
             const deleteButton = event.target.closest('.delete-btn');
-            console.log("2. Результат поиска кнопки .delete-btn:", deleteButton);
-
             if (deleteButton) {
-                console.log("3. Кнопка найдена, заходим в условие.");
                 const imageId = deleteButton.dataset.imageId;
-                console.log("4. Получен ID картинки:", imageId);
-
                 if (confirm('Вы уверены, что хотите удалить эту картинку?')) {
-                    console.log("5. Пользователь подтвердил удаление. Отправляем запрос...");
                     const response = await api.performAction('delete_image', { imageId });
-                    console.log("6. Получен ответ от сервера:", response);
                     if (response && response.success) {
                         ui.loadImages();
                     } else {
                         alert('Не удалось удалить картинку.');
                     }
-                } else {
-                     console.log("5a. Пользователь отменил удаление.");
                 }
             }
         });
