@@ -452,10 +452,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         document.addEventListener('keydown', (e) => {
             if (!DOMElements.gameScreen.classList.contains('active')) return;
-            if(e.key.toLowerCase() === 'h') { e.preventDefault(); game.hint(); }
-            if(e.key.toLowerCase() === 'u' && !e.shiftKey) { e.preventDefault(); game.undo(); }
-            if(e.key.toLowerCase() === 'r' || (e.key.toLowerCase() === 'u' && e.shiftKey)) { e.preventDefault(); game.redo(); }
+            
+            const code = e.code; // Используем e.code для независимости от раскладки
+            const isShift = e.shiftKey;
 
+            switch (code) {
+                case 'KeyH':
+                    e.preventDefault();
+                    game.hint();
+                    break;
+                case 'KeyU':
+                    e.preventDefault();
+                    if (isShift) {
+                        game.redo();
+                    } else {
+                        game.undo();
+                    }
+                    break;
+                case 'KeyR':
+                    e.preventDefault();
+                    game.playAgain();
+                    break;
+            }
+            
             const emptyIndex = state.currentBoardState.indexOf(0);
             if (emptyIndex === -1) return;
 

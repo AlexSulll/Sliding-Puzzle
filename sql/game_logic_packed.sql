@@ -163,7 +163,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         WHERE USERNAME = p_username;
 
         IF l_count > 0 THEN
-            RETURN -1; -- Пользователь уже существует
+            RETURN -1;
         END IF;
 
         INSERT INTO USERS (USER_ID, USERNAME, PASSWORD_HASH)
@@ -188,7 +188,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         RETURN l_user_id;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
-            RETURN 0; -- Неверный логин или пароль
+            RETURN 0;
     END login_user;
 
     ----------------------------------------------------------------------------
@@ -200,21 +200,18 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         FOR rec IN (
             SELECT 
                 GAME_ID,
-                -- Логика времени жизни сессии, как во фронтенде
                 START_TIME + (CEIL(10 * (BOARD_SIZE / 4)) / (24 * 60)) AS EXPIRATION_TIME
             FROM GAMES
             WHERE STATUS = 'ACTIVE'
         ) LOOP
-            -- ИЗМЕНЕНО: SYSTIMESTAMP на SYSDATE
             IF rec.EXPIRATION_TIME < SYSDATE THEN
-                -- Помечаем игру как брошенную
+                -- --- ИСПРАВЛЕНО: Удалена строка с CURRENT_MOVE_ORDER = null ---
                 UPDATE GAMES
                 SET STATUS = 'ABANDONED',
                     COMPLETED_AT = rec.EXPIRATION_TIME,
-                    CURRENT_MOVE_ORDER = null
+                    CURRENT_MOVE_ORDER = NULL
                 WHERE GAME_ID = rec.GAME_ID;
 
-                -- Удаляем историю ходов для этой игры
                 DELETE FROM MOVE_HISTORY WHERE GAME_ID = rec.GAME_ID;
             END IF;
         END LOOP;
@@ -226,7 +223,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_game_id   GAMES.GAME_ID%TYPE;
         l_json_clob CLOB;
     BEGIN
-        -- Перед проверкой активной сессии, запускаем очистку на случай, если сессия истекла
         cleanup_expired_games; 
         
         SELECT GAME_ID 
@@ -272,7 +268,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             END;
         END IF;
         
-        -- Перед удалением старой активной игры, нужно сначала удалить ее историю ходов
         DECLARE
             l_old_game_id GAMES.GAME_ID%TYPE;
         BEGIN
@@ -287,18 +282,17 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             END IF;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
-                NULL; -- Все в порядке, активной игры не было
+                NULL;
         END;
         
         IF p_replay_game_id IS NOT NULL THEN
             DECLARE
                 l_original_game GAMES%ROWTYPE;
             BEGIN
-                -- Берем начальное состояние из самой таблицы GAMES
                 SELECT * INTO l_original_game FROM GAMES WHERE GAME_ID = p_replay_game_id;
                 
-                -- ИЗМЕНЕНО: INITIAL_BOARD_STATE на BOARD_STATE
-                l_start_state       := l_original_game.BOARD_STATE; 
+                -- --- ИСПРАВЛЕНО: Используется правильное имя поля INITIAL_BOARD_STATE ---
+                l_start_state       := l_original_game.INITIAL_BOARD_STATE; 
                 l_size              := l_original_game.BOARD_SIZE;
                 l_shuffles          := l_original_game.SHUFFLE_MOVES;
                 l_game_mode_to_use  := l_original_game.GAME_MODE;
@@ -320,6 +314,11 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 l_start_state     := l_daily.BOARD_STATE;
                 l_optimal_moves   := l_daily.OPTIMAL_MOVES;
                 l_image_id_to_use := l_daily.IMAGE_ID;
+                IF l_daily.IMAGE_ID IS NOT NULL THEN
+                    l_game_mode_to_use := 'IMAGE';
+                ELSE
+                    l_game_mode_to_use := 'INTS';
+                END IF;
             EXCEPTION 
                 WHEN NO_DATA_FOUND THEN 
                     RETURN '{"error":"Daily challenge not found for today"}'; 
@@ -363,18 +362,43 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                     END; 
                     EXIT WHEN l_start_state != l_target_state; 
                 END LOOP; 
-                l_optimal_moves := 0; 
+                
+                DECLARE 
+                    l_path GAME_MANAGER_PKG.t_path; 
+                    l_solution GAME_MANAGER_PKG.t_path; 
+                    l_initial_node GAME_MANAGER_PKG.t_node; 
+                    l_threshold NUMBER; 
+                    l_result NUMBER; 
+                BEGIN 
+                    init_target_positions(state_to_table(l_target_state), l_size); 
+                    l_initial_node.board_state := state_to_table(l_start_state); 
+                    l_initial_node.g_cost := 0; 
+                    l_initial_node.h_cost := calculate_heuristic(l_initial_node.board_state); 
+                    l_path(1) := l_initial_node; 
+                    l_threshold := l_initial_node.h_cost; 
+                    
+                    LOOP 
+                        l_result := search(l_path, 0, l_threshold, l_solution); 
+                        IF l_result = -1 THEN EXIT; END IF; 
+                        l_threshold := l_result; 
+                        IF l_threshold > 80 THEN l_solution.DELETE; EXIT; END IF; 
+                    END LOOP; 
+                    
+                    IF l_solution.COUNT > 0 THEN
+                        l_optimal_moves := l_solution.COUNT - 1; 
+                    ELSE
+                        l_optimal_moves := 0;
+                    END IF;
+                END;
             END;
         END IF;
         
         INSERT INTO GAMES (
             GAME_ID, USER_ID, STATUS, BOARD_SIZE, SHUFFLE_MOVES, GAME_MODE, MOVE_COUNT,
             IMAGE_ID, CHALLENGE_ID, START_TIME, DURATION_SECONDS, STARS_EARNED,
-            -- ИЗМЕНЕНО: INITIAL_BOARD_STATE на BOARD_STATE
-            OPTIMAL_MOVES, CURRENT_MOVE_ORDER, BOARD_STATE
+            OPTIMAL_MOVES, CURRENT_MOVE_ORDER, INITIAL_BOARD_STATE
         ) VALUES (
             GAMES_SEQ.NEXTVAL, p_user_id, 'ACTIVE', l_size, l_shuffles, l_game_mode_to_use, 0,
-            -- ИЗМЕНЕНО: CURRENT_TIMESTAMP на SYSDATE
             l_image_id_to_use, l_challenge_id, SYSDATE, 0, 0,
             l_optimal_moves, 0, l_start_state
         )
@@ -398,7 +422,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         UPDATE GAMES
         SET STATUS = 'ABANDONED',
             COMPLETED_AT = SYSDATE,
-            DURATION_SECONDS = l_duration
+            DURATION_SECONDS = l_duration,
+            CURRENT_MOVE_ORDER = NULL
         WHERE GAME_ID = p_session_id;
 
         DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
@@ -415,15 +440,15 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         UPDATE GAMES
         SET STATUS = 'TIMEOUT',
             COMPLETED_AT = l_game.START_TIME + (l_game.DURATION_SECONDS / 86400),
-            -- DURATION_SECONDS уже установлено при старте, его не трогаем
-            STARS_EARNED = 0
+            STARS_EARNED = 0,
+            CURRENT_MOVE_ORDER = NULL
         WHERE GAME_ID = p_session_id;
 
         DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
         COMMIT;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
-            NULL; -- Игра уже могла быть завершена, ничего страшного
+            NULL;
     END timeout_game;
 
     FUNCTION process_move(
@@ -472,7 +497,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             l_target_state := l_target_state || '0'; 
             
             IF l_new_board_state = l_target_state THEN 
-                -- ИЗМЕНЕНО: Логика вычисления длительности для типа DATE
                 l_duration := ROUND((SYSDATE - l_game.START_TIME) * 86400); 
                 
                 IF l_game.OPTIMAL_MOVES > 0 THEN 
@@ -487,20 +511,16 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 UPDATE GAMES 
                 SET STATUS = 'SOLVED', 
                     MOVE_COUNT = l_game.MOVE_COUNT + 1, 
-                    -- ИЗМЕНЕНО: CURRENT_TIMESTAMP на SYSDATE
                     COMPLETED_AT = SYSDATE, 
                     DURATION_SECONDS = l_duration, 
                     STARS_EARNED = l_stars,
-                    BOARD_STATE = l_new_board_state, -- ИЗМЕНЕНО: Обновляем финальное состояние
                     CURRENT_MOVE_ORDER = null
                 WHERE GAME_ID = p_session_id; 
                 
-                -- После победы удаляем историю ходов, так как сессия завершена
                 DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
 
                 COMMIT;
 
-                -- Возвращаем финальный JSON без вызова get_game_state_json
                 DECLARE
                     l_final_json CLOB;
                     l_image_url VARCHAR2(256);
@@ -527,7 +547,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 END;
                 
             ELSE 
-                -- Удаляем возможные "будущие" ходы, если игрок сделал undo, а потом новый ход
                 DELETE FROM MOVE_HISTORY 
                 WHERE GAME_ID = p_session_id AND MOVE_ORDER > l_game.CURRENT_MOVE_ORDER; 
                 
@@ -536,8 +555,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 
                 UPDATE GAMES 
                 SET MOVE_COUNT = l_game.MOVE_COUNT + 1, 
-                    CURRENT_MOVE_ORDER = l_game.CURRENT_MOVE_ORDER + 1,
-                    BOARD_STATE = l_new_board_state -- ИЗМЕНЕНО: Обновляем текущее состояние
+                    CURRENT_MOVE_ORDER = l_game.CURRENT_MOVE_ORDER + 1
                 WHERE GAME_ID = p_session_id; 
             END IF; 
             COMMIT; 
@@ -548,21 +566,13 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     FUNCTION undo_move(p_session_id IN GAMES.GAME_ID%TYPE) RETURN CLOB 
     AS 
         l_game GAMES%ROWTYPE; 
-        l_prev_board_state VARCHAR2(1000);
     BEGIN 
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id AND STATUS = 'ACTIVE'; 
         
         IF l_game.CURRENT_MOVE_ORDER > 0 THEN 
-            -- Находим предыдущее состояние доски
-            SELECT BOARD_STATE 
-            INTO l_prev_board_state 
-            FROM MOVE_HISTORY 
-            WHERE GAME_ID = p_session_id AND MOVE_ORDER = l_game.CURRENT_MOVE_ORDER - 1;
-
             UPDATE GAMES 
             SET CURRENT_MOVE_ORDER = l_game.CURRENT_MOVE_ORDER - 1, 
-                MOVE_COUNT = l_game.MOVE_COUNT - 1,
-                BOARD_STATE = l_prev_board_state -- ИЗМЕНЕНО: Обновляем текущее состояние
+                MOVE_COUNT = l_game.MOVE_COUNT - 1
             WHERE GAME_ID = p_session_id; 
             COMMIT; 
         END IF; 
@@ -574,7 +584,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     AS 
         l_max_move_order     NUMBER; 
         l_game               GAMES%ROWTYPE;
-        l_next_board_state   VARCHAR2(1000);
     BEGIN 
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id AND STATUS = 'ACTIVE'; 
         
@@ -582,16 +591,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         FROM MOVE_HISTORY WHERE GAME_ID = p_session_id; 
         
         IF l_game.CURRENT_MOVE_ORDER < l_max_move_order THEN 
-            -- Находим следующее состояние доски
-            SELECT BOARD_STATE 
-            INTO l_next_board_state 
-            FROM MOVE_HISTORY 
-            WHERE GAME_ID = p_session_id AND MOVE_ORDER = l_game.CURRENT_MOVE_ORDER + 1;
-
             UPDATE GAMES 
             SET CURRENT_MOVE_ORDER = l_game.CURRENT_MOVE_ORDER + 1, 
-                MOVE_COUNT = l_game.MOVE_COUNT + 1,
-                BOARD_STATE = l_next_board_state -- ИЗМЕНЕНО: Обновляем текущее состояние
+                MOVE_COUNT = l_game.MOVE_COUNT + 1
             WHERE GAME_ID = p_session_id; 
             COMMIT; 
         END IF; 
@@ -634,18 +636,17 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
         l_query := l_query || ' GROUP BY u.USERNAME';
 
-        -- Исправленная логика выполнения динамического запроса
         IF p_filter_size > 0 AND p_filter_difficulty > 0 THEN
             EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_difficulty;
         ELSIF p_filter_size > 0 THEN
-            l_query := REPLACE(l_query, ':2', 'NULL'); -- Сначала заменяем
-            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size; -- Потом выполняем
+            l_query := REPLACE(l_query, ':2', 'NULL');
+            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size;
         ELSIF p_filter_difficulty > 0 THEN
-            l_query := REPLACE(l_query, ':1', 'NULL'); -- Сначала заменяем
-            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_difficulty; -- Потом выполняем
+            l_query := REPLACE(l_query, ':1', 'NULL');
+            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_difficulty;
         ELSE
-            l_query := REPLACE(REPLACE(l_query, ':1', 'NULL'), ':2', 'NULL'); -- Сначала заменяем
-            EXECUTE IMMEDIATE l_query INTO l_json; -- Потом выполняем
+            l_query := REPLACE(REPLACE(l_query, ':1', 'NULL'), ':2', 'NULL');
+            EXECUTE IMMEDIATE l_query INTO l_json;
         END IF;
 
         RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'));
@@ -693,7 +694,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             RETURN 0; 
         END IF; 
         
-        -- ИЗМЕНЕНО: Убрано поле UPLOADED_AT, т.к. в новой схеме его нет
         INSERT INTO USER_IMAGES (IMAGE_ID, USER_ID, MIME_TYPE, IMAGE_DATA, IMAGE_HASH, UPLOADED_AT) 
         VALUES (USER_IMAGES_SEQ.NEXTVAL, p_user_id, p_mime_type, p_image_data, p_image_hash, SYSDATE); 
         
@@ -708,7 +708,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     AS 
         l_json CLOB; 
     BEGIN 
-        -- ИЗМЕНЕНО: UPLOADED_AT в новой схеме есть, ошибка исправлена
         SELECT JSON_ARRAYAGG(JSON_OBJECT('id' VALUE IMAGE_ID) ORDER BY UPLOADED_AT DESC) 
         INTO l_json 
         FROM USER_IMAGES 
@@ -771,12 +770,16 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     ----------------------------------------------------------------------------
     FUNCTION get_hint(p_session_id IN GAMES.GAME_ID%TYPE) RETURN VARCHAR2 
     AS 
+        l_current_state VARCHAR2(1000); 
         l_game          GAMES%ROWTYPE; 
         l_target_state  VARCHAR2(1000); 
         l_tile_to_move  NUMBER; 
     BEGIN 
-        -- ИЗМЕНЕНО: Берем текущее состояние напрямую из таблицы GAMES
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id; 
+        
+        SELECT BOARD_STATE INTO l_current_state 
+        FROM MOVE_HISTORY 
+        WHERE GAME_ID = p_session_id AND MOVE_ORDER = l_game.CURRENT_MOVE_ORDER; 
         
         l_target_state := ''; 
         FOR i IN 1..(l_game.BOARD_SIZE * l_game.BOARD_SIZE - 1) LOOP 
@@ -785,7 +788,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_target_state := l_target_state || '0'; 
         
         l_tile_to_move := get_next_best_move( 
-            p_board_state        => l_game.BOARD_STATE, 
+            p_board_state        => l_current_state, 
             p_target_board_state => l_target_state, 
             p_board_size_param   => l_game.BOARD_SIZE 
         ); 
@@ -884,12 +887,25 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     ----------------------------------------------------------------------------
     FUNCTION get_game_state_json(p_game_id IN NUMBER) RETURN CLOB 
     AS 
-        l_json_clob CLOB;
-        l_game      GAMES%ROWTYPE;
-        l_image_url VARCHAR2(256);
+        l_json_clob           CLOB;
+        l_game                GAMES%ROWTYPE;
+        l_current_board_state VARCHAR2(1000);
+        l_image_url           VARCHAR2(256);
     BEGIN
-        -- ИЗМЕНЕНО: Логика упрощена, состояние берется напрямую из GAMES
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_game_id;
+
+        IF l_game.STATUS = 'SOLVED' THEN
+             l_current_board_state := ''; 
+            FOR i IN 1..(l_game.BOARD_SIZE * l_game.BOARD_SIZE - 1) LOOP 
+                l_current_board_state := l_current_board_state || i || ','; 
+            END LOOP; 
+            l_current_board_state := l_current_board_state || '0'; 
+        ELSE
+            SELECT BOARD_STATE
+            INTO l_current_board_state
+            FROM MOVE_HISTORY
+            WHERE GAME_ID = p_game_id AND MOVE_ORDER = l_game.CURRENT_MOVE_ORDER;
+        END IF;
         
         IF l_game.IMAGE_ID IS NOT NULL THEN
             l_image_url := '/api/image/' || l_game.IMAGE_ID;
@@ -901,7 +917,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             JSON_OBJECT(
                 'sessionId'  VALUE l_game.GAME_ID,
                 'boardSize'  VALUE l_game.BOARD_SIZE,
-                'boardState' VALUE JSON_QUERY('[' || l_game.BOARD_STATE || ']', '$'),
+                'boardState' VALUE JSON_QUERY('[' || l_current_board_state || ']', '$'),
                 'moves'      VALUE l_game.MOVE_COUNT,
                 'startTime'  VALUE TO_CHAR(l_game.START_TIME, 'YYYY-MM-DD"T"HH24:MI:SS'),
                 'status'     VALUE l_game.STATUS,
@@ -915,7 +931,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         RETURN l_json_clob;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
-            RETURN '{"status":"error", "message":"Session not found"}';
+            RETURN '{"status":"error", "message":"Session not found or history missing"}';
     END get_game_state_json;
     
     FUNCTION calculate_heuristic(p_board GAME_MANAGER_PKG.t_board) RETURN NUMBER 
