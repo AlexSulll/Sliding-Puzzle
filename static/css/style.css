@@ -1,0 +1,453 @@
+/* --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ И СТИЛИ --- */
+:root {
+    --board-size: 4;
+    --tile-size: 80px;
+    --tile-margin: 4px;
+    --primary-color: #5a67d8;
+    --primary-color-hover: #4c58b6;
+    --secondary-color: #6c757d;
+    --danger-color: #e53e3e;
+    --warning-color: #f6ad55;
+    --background-color: #f7fafc;
+    --container-bg: #ffffff;
+    --text-color: #2d3748;
+    --border-color: #e2e8f0;
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    background-color: var(--background-color);
+    margin: 0;
+    padding: 20px;
+    box-sizing: border-box;
+    color: var(--text-color);
+}
+
+.main-container {
+    width: 100%;
+    max-width: 550px;
+    background: var(--container-bg);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    text-align: center;
+    transition: all 0.3s ease-in-out;
+}
+
+.main-header {
+    padding: 15px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+main#app-container {
+    padding: 20px;
+}
+
+h1 { font-size: 2.25rem; color: var(--text-color); margin-top: 10px; margin-bottom: 10px;}
+h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-top: 0px; }
+.screen { display: none; }
+.screen.active { display: block; }
+
+hr { border: 0; border-top: 1px solid var(--border-color); margin: 25px 0; }
+
+/* --- ОБЩИЕ ЭЛЕМЕНТЫ: КНОПКИ И ПОЛЯ --- */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 24px;
+    font-size: 1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+}
+.btn:active { transform: scale(0.97); }
+.btn i { line-height: 1; }
+.btn-primary { background-color: var(--primary-color); color: white; }
+.btn-primary:hover { background-color: var(--primary-color-hover); box-shadow: 0 2px 8px rgba(90, 103, 216, 0.4); }
+.btn-secondary { background-color: #edf2f7; color: #4a5568; border: 1px solid var(--border-color); }
+.btn-secondary:hover { background-color: #e2e8f0; }
+.btn-danger { background-color: var(--danger-color); color: white; }
+.btn-danger:hover { background-color: #c53030; }
+.btn-large { padding: 15px 30px; font-size: 1.1rem; }
+
+.nav-buttons { margin-top: 15px; display: flex; justify-content: center; gap: 10px; }
+.nav-btn { background: #f1f3f5; border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-weight: 500; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px;}
+.nav-btn.active, .nav-btn:hover { background: var(--primary-color); color: white; }
+
+/* --- ЭКРАН АВТОРИЗАЦИИ --- */
+.auth-form input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 1rem;
+    box-sizing: border-box;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.auth-form input:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.2); outline: none; }
+.auth-form { display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
+.auth-toggle { text-align: center; }
+.auth-prompt { color: #6c757d; font-size: 0.95rem; margin: 0; }
+.auth-link { color: var(--primary-color); text-decoration: none; font-weight: 600; }
+/* Базовые стили для блока ошибок */
+.error-message {
+    color: var(--danger-color);
+    font-weight: 500;
+    border-radius: 8px;
+    padding: 0;
+    margin-top: 0;
+    transition: all 0.3s ease; /* Плавное появление */
+    height: 0; /* Изначально высота 0 */
+    opacity: 0; /* Изначально невидим */
+}
+
+/* Стили, которые применяются ТОЛЬКО когда в блоке есть текст */
+.error-message:not(:empty) {
+    height: auto; /* Высота по содержимому */
+    opacity: 1; /* Становится видимым */
+    margin-top: 15px;
+    padding: 10px 15px;
+    background-color: #fef2f2; /* Легкий красный фон для привлечения внимания */
+    border: 1px solid #fecaca;
+}
+#user-status { color: #4a5568; display: flex; justify-content: center; align-items: center; gap: 15px; }
+
+/* --- ЭКРАН НАСТРОЕК --- */
+.form-group { margin-bottom: 20px; text-align: left; }
+.form-group label { display: block; margin-bottom: 8px; font-weight: 500; color: #4a5568; }
+
+.mode-selector { display: flex; gap: 15px; justify-content: center; margin-top: 10px;}
+.mode-option input[type="radio"] { display: none; }
+.mode-label { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 120px; height: 100px; border: 2px solid var(--border-color); border-radius: 12px; cursor: pointer; padding: 15px; transition: all 0.2s ease; }
+.mode-label i { font-size: 2em; margin-bottom: 8px; transition: color 0.2s; }
+.mode-label:hover { background-color: #f7fafc; }
+.mode-option input[type="radio"]:checked + .mode-label { border-color: var(--primary-color); background-color: #ebf4ff; color: var(--primary-color); }
+
+.daily-challenge-toggle input { display: none; padding: 10px;}
+.daily-label { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 15px; border: 2px dashed var(--border-color); border-radius: 12px; cursor: pointer; transition: all 0.2s; font-weight: 600; font-size: 1.1rem; }
+.daily-label:hover { border-color: var(--warning-color); background-color: #fffaf0; }
+.daily-challenge-toggle input:checked + .daily-label { border-style: solid; border-color: var(--warning-color); background-color: #fffaf0; color: #dd6b20; margin-bottom: 10px;}
+
+#image-selection { margin-top: 20px; }
+.image-previews { display: flex; gap: 10px; margin: 15px 0; justify-content: center; }
+.preview-img { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 3px solid transparent; transition: all 0.2s; }
+.preview-img.selected { border-color: var(--primary-color); transform: scale(1.1); }
+#custom-image-name { font-style: italic; color: #6c757d; margin-top: 10px; }
+
+.custom-select-wrapper { position: relative; }
+.custom-select-wrapper::after { content: '\f078'; font-family: 'Font Awesome 6 Free'; font-weight: 900; position: absolute; top: 50%; right: 15px; transform: translateY(-50%); pointer-events: none; transition: transform 0.2s; }
+.custom-select-wrapper select { width: 100%; padding: 12px 40px 12px 15px; border-radius: 8px; border: 1px solid var(--border-color); font-size: 1rem; appearance: none; -webkit-appearance: none; background-color: white; cursor: pointer; }
+.custom-select-wrapper select:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.2); outline: none; }
+
+/* --- ИГРОВОЙ ЭКРАН --- */
+#active-game-view.hidden { display: none; }
+.info-panel { display: flex; justify-content: space-around; margin-bottom: 20px; font-size: 1.2rem; font-weight: 500; }
+.info-panel > div { display: flex; align-items: center; gap: 8px; }
+.controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 20px; }
+#game-board-container { position: relative; margin: 0 auto; width: fit-content; }
+#game-board { display: grid; grid-template-columns: repeat(var(--board-size), 1fr); gap: var(--tile-margin); padding: var(--tile-margin); background-color: #cbd5e0; border-radius: 8px; }
+.tile { width: var(--tile-size); height: var(--tile-size); background-color: var(--container-bg); color: var(--text-color); display: flex; justify-content: center; align-items: center; font-size: calc(var(--tile-size) * 0.4); font-weight: bold; border-radius: 6px; cursor: pointer; user-select: none; transition: all 0.2s ease-in-out; background-size: calc(var(--tile-size) * var(--board-size)) calc(var(--tile-size) * var(--board-size)); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.tile.hint { box-shadow: 0 0 15px var(--warning-color); border: 2px solid var(--warning-color); }
+.tile:not(.empty):hover { background-color: #e2e8f0; transform: scale(1.05); }
+.tile.empty { background: transparent !important; cursor: default; box-shadow: none; }
+
+/* --- ЭКРАН ПОБЕДЫ --- */
+#win-overlay { display: flex; flex-direction: column; justify-content: center; align-items: center; }
+#win-overlay.hidden { display: none !important; }
+#win-overlay p { font-size: 1.1rem; color: #333; }
+#win-overlay p strong { color: var(--primary-color); }
+.stars { font-size: 2.5rem; color: var(--warning-color); margin-bottom: 10px; }
+.hidden { display: none !important; }
+
+/* --- ЭКРАН РЕЙТИНГОВ --- */
+.leaderboard-filters { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; justify-content: center; }
+#leaderboard-tables h3 { margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;}
+#leaderboard-tables table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; }
+#leaderboard-tables th, #leaderboard-tables td { padding: 12px 15px; text-align: left; }
+#leaderboard-tables th { background-color: #f7fafc; font-weight: 600; }
+#leaderboard-tables tr { border-bottom: 1px solid var(--border-color); }
+#leaderboard-tables tr:last-child { border-bottom: none; }
+
+/* --- АДАПТИВНОСТЬ --- */
+@media (max-width: 600px) {
+    :root { --tile-size: 60px; }
+    body { padding: 10px; }
+    .main-container { padding: 0; }
+    main#app-container { padding: 15px; }
+    .mode-label { width: 100px; height: 80px; }
+}
+@media (max-width: 450px) {
+    :root { --tile-size: 50px; }
+    .btn { padding: 10px 16px; font-size: 0.9rem; }
+    .leaderboard-filters { flex-direction: column; align-items: stretch; }
+}
+
+/* --- Улучшения для таблицы рейтингов --- */
+#leaderboard-tables table {
+    background-color: var(--container-bg); /* Более яркий фон */
+    border: 1px solid var(--primary-color); /* Акцентная рамка */
+    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); /* Более выразительная тень */
+    transition: all 0.3s ease;
+}
+
+#leaderboard-tables table:hover {
+    transform: translateY(-2px); /* Небольшой эффект при наведении */
+    box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.15), 0 12px 12px -5px rgba(0, 0, 0, 0.08);
+}
+
+#leaderboard-tables th {
+    background-color: var(--primary-color); /* Яркий фон для заголовков */
+    color: white; /* Белый текст на ярком фоне */
+    font-weight: 700; /* Более жирный шрифт */
+    text-transform: uppercase; /* Заголовки в верхнем регистре */
+    letter-spacing: 0.05em; /* Небольшой интервал между буквами */
+    position: sticky; /* Заголовки остаются на месте при прокрутке */
+    top: 0;
+    z-index: 1;
+}
+
+#leaderboard-tables tr {
+    transition: background-color 0.2s ease;
+}
+
+#leaderboard-tables tr:nth-child(even) {
+    background-color: #f7fafc; /* Светлая полоса для четных строк */
+}
+
+#leaderboard-tables tr:hover {
+    background-color: #ebf4ff; /* Мягкое выделение при наведении на строку */
+}
+
+#leaderboard-tables td {
+    color: #4a5568; /* Чуть более темный цвет текста */
+    border-bottom: 1px solid #ebf4ff; /* Более мягкая граница между строками */
+}
+
+#leaderboard-tables tr:last-child td {
+    border-bottom: none; /* Убираем нижнюю границу у последней строки */
+}
+
+/* Стилизация золотой звездочки */
+.gold-star {
+    color: var(--warning-color); /* Используем переменную для золотого цвета */
+    font-size: 0.9em; /* Чуть меньше основного текста */
+    margin-left: 5px; /* Небольшой отступ от числа */
+}
+
+.star-count {
+    font-weight: 600; /* Жирный шрифт для количества звезд */
+    color: var(--primary-color); /* Основной цвет приложения для числа */
+}
+
+/* --- Стилизация выпадающих списков --- */
+.custom-select-wrapper {
+    position: relative;
+    display: block; /* Убедимся, что обертка занимает всю ширину */
+}
+
+/* Иконка-стрелочка */
+.custom-select-wrapper::after {
+    content: '\f078';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 50%;
+    right: 15px;
+    transform: translateY(-50%);
+    pointer-events: none;
+    transition: transform 0.2s ease;
+    color: #a0aec0;
+}
+
+.custom-select-wrapper select {
+    width: 100%;
+    padding: 12px 40px 12px 15px; /* Добавлено больше места справа для стрелки */
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-color);
+    appearance: none;
+    -webkit-appearance: none;
+    background-color: white;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s; /* Плавные переходы */
+}
+
+.custom-select-wrapper select:hover {
+    border-color: #a0aec0; /* Подсветка рамки при наведении */
+}
+
+.custom-select-wrapper select:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.2);
+    outline: none;
+}
+
+.preview-container {
+    position: relative;
+}
+
+.delete-btn {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background-color: var(--danger-color);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+    line-height: 24px;
+    text-align: center;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    transform: scale(0.8);
+}
+
+#restart-btn {
+    background-color: #edf2f7;
+    color: #4a5568;
+    border: none;
+}
+
+#restart-btn:hover {
+    background-color: #edf2f7;
+}
+
+.preview-container:hover .delete-btn {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* --- ЭКРАН ИСТОРИИ ИГР --- */
+#history-table-container {
+    margin-top: 20px;
+}
+
+.history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    box-shadow: var(--shadow);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.history-table th, .history-table td {
+    padding: 12px 15px;
+    text-align: left;
+}
+
+.history-table th {
+    background-color: #f7fafc;
+    font-weight: 600;
+}
+
+.history-table tr {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.history-table tr:last-child {
+    border-bottom: none;
+}
+
+.history-table tr:hover {
+    background-color: #ebf4ff;
+}
+
+.replay-btn {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+}
+
+.status-solved {
+    color: #f6ad55; /* warning-color */
+    font-weight: bold;
+}
+
+.status-abandoned {
+    color: #6c757d; /* secondary-color */
+}
+
+/* --- Стили для панели статистики --- */
+#user-stats-panel {
+    position: fixed; /* Прикрепляем к окну браузера */
+    top: 20px;
+    left: 20px;
+    width: 260px; /* Задаем фиксированную ширину */
+    background-color: var(--container-bg); /* Используем фон как у основного контейнера */
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 15px 20px;
+    text-align: left;
+    box-shadow: var(--shadow); /* Используем основную тень */
+    z-index: 1000; /* Размещаем поверх всех элементов */
+    transition: transform 0.3s ease;
+}
+
+#user-stats-panel.hidden {
+    transform: translateX(-150%); /* Прячем панель за пределы экрана */
+}
+
+#user-stats-panel h3 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 1.1rem;
+    color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+#user-stats-panel ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr; /* В одну колонку для вертикального вида */
+    gap: 8px;
+}
+
+#user-stats-panel li {
+    font-size: 0.95rem;
+}
+
+#user-stats-panel li strong {
+    color: #4a5568;
+}
+
+/* Адаптивность для маленьких экранов */
+@media (max-width: 900px) {
+    #user-stats-panel {
+        position: static; /* Возвращаем в обычный поток документа */
+        width: auto;
+        margin: 20px;
+        transform: none !important; /* Отключаем анимацию скрытия */
+    }
+
+    #user-stats-panel.hidden {
+        display: none !important; /* Просто скрываем на мобильных, если не залогинен */
+    }
+
+    /* Нужно поправить основной контейнер, чтобы он не прилипал к статистике */
+    .main-container {
+        margin-top: 0;
+    }
+}
+
+.status-timeout {
+    color: #e53e3e; /* danger-color */
+    font-weight: bold;
+}
