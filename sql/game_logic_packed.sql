@@ -71,6 +71,11 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
     PROCEDURE timeout_game(
         p_session_id IN GAMES.GAME_ID%TYPE
     );
+
+    FUNCTION restart_game(
+        p_session_id IN GAMES.GAME_ID%TYPE
+    ) RETURN CLOB;
+
     ----------------------------------------------------------------------------
     -- API: БЛОК ПОДСКАЗОК, РЕЙТИНГОВ И ИЗОБРАЖЕНИЙ
     ----------------------------------------------------------------------------
@@ -450,6 +455,37 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         WHEN NO_DATA_FOUND THEN
             NULL;
     END timeout_game;
+
+    FUNCTION restart_game(p_session_id IN GAMES.GAME_ID%TYPE) RETURN CLOB
+    AS
+        l_game GAMES%ROWTYPE;
+        l_initial_state VARCHAR2(1000);
+    BEGIN
+        SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id;
+        l_initial_state := l_game.INITIAL_BOARD_STATE;
+        
+        DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
+        
+        INSERT INTO MOVE_HISTORY (MOVE_ID, GAME_ID, MOVE_ORDER, BOARD_STATE)
+        VALUES (MOVE_HISTORY_SEQ.NEXTVAL, p_session_id, 0, l_initial_state);
+        
+        UPDATE GAMES
+        SET 
+            MOVE_COUNT = 0,
+            CURRENT_MOVE_ORDER = 0,
+            START_TIME = SYSDATE,
+            DURATION_SECONDS = 0,
+            STATUS = 'ACTIVE'
+        WHERE GAME_ID = p_session_id;
+        
+        COMMIT;
+        
+        -- Возвращаем обновленное состояние игры
+        RETURN get_game_state_json(p_session_id);
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Game session not found');
+    END restart_game;
 
     FUNCTION process_move(
         p_session_id IN GAMES.GAME_ID%TYPE, 
@@ -1190,4 +1226,3 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     END get_user_stats;
     
 END GAME_MANAGER_PKG;
-/

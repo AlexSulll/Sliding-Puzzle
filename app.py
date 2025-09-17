@@ -177,6 +177,9 @@ def handle_action():
             if image_id_to_delete:
                 cursor.callproc('GAME_MANAGER_PKG.delete_user_image', [user_id, int(image_id_to_delete)])
                 return jsonify({"success": True, "message": "Image deleted"})
+        
+        elif action == 'restart':
+            result_clob = cursor.callfunc('GAME_MANAGER_PKG.restart_game', oracledb.DB_TYPE_CLOB, [game_session_id])
             
         else:
             return jsonify({"error": "Unknown action"}), 400

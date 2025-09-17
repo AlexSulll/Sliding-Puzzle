@@ -316,6 +316,16 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: 25px 0; }
     transform: scale(0.8);
 }
 
+#restart-btn {
+    background-color: #edf2f7;
+    color: #4a5568;
+    border: none;
+}
+
+#restart-btn:hover {
+    background-color: #edf2f7;
+}
+
 .preview-container:hover .delete-btn {
     opacity: 1;
     transform: scale(1);

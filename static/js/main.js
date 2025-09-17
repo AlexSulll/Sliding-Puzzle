@@ -68,7 +68,8 @@ document.addEventListener('DOMContentLoaded', () => {
         statsUsername: document.getElementById('stats-username'),
         statsStars: document.getElementById('stats-stars'),
         statsBestTime: document.getElementById('stats-best-time'),
-        statsBestMoves: document.getElementById('stats-best-moves')
+        statsBestMoves: document.getElementById('stats-best-moves'),
+        restartBtn: document.getElementById('restart-btn')
     };
 
     // === API Module: Simplified with a single action endpoint ===
@@ -147,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
         playAgain: () => { timer.stop(); ui.showScreen('settings'); },
         hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
         timeout: async () => { await api.performAction('timeout'); timer.stop(); ui.showScreen('settings'); },
+        restart: async () => { const gameState = await api.performAction('restart'); if (gameState) { timer.stop(); ui.render(gameState); timer.start(gameState.startTime, state.boardSize); } },
     };
     
     // === UI Module: Handles all DOM manipulation ===
@@ -442,6 +444,7 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.abandonBtn.addEventListener('click', game.abandon);
         DOMElements.playAgainBtn.addEventListener('click', game.playAgain);
         DOMElements.applyFiltersBtn.addEventListener('click', ui.renderLeaderboards);
+        DOMElements.restartBtn.addEventListener('click', game.restart);
         DOMElements.historyTableContainer.addEventListener('click', (event) => {
             if (event.target && event.target.classList.contains('replay-btn')) {
                 const gameId = event.target.dataset.gameId;
@@ -471,7 +474,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     break;
                 case 'KeyR':
                     e.preventDefault();
-                    game.playAgain();
+                    if (DOMElements.gameScreen.classList.contains('active')) {
+                        game.restart();
+                    } else {
+                        game.playAgain();
+                    }
                     break;
             }
             
