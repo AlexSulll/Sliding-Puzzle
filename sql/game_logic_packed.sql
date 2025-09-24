@@ -131,6 +131,11 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_user_id IN USERS.USER_ID%TYPE
     ) RETURN CLOB;
 
+    FUNCTION calculate_optimal_path_length(
+        p_board_state IN VARCHAR2,
+        p_board_size_param IN NUMBER
+    ) RETURN NUMBER;
+
 END GAME_MANAGER_PKG;
 /
 
@@ -921,34 +926,66 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     ----------------------------------------------------------------------------
     -- РЕАЛИЗАЦИЯ: ПРИВАТНЫЕ УТИЛИТЫ
     ----------------------------------------------------------------------------
-    FUNCTION get_game_state_json(p_game_id IN NUMBER) RETURN CLOB 
-    AS 
-        l_json_clob           CLOB;
-        l_game                GAMES%ROWTYPE;
-        l_current_board_state VARCHAR2(1000);
-        l_image_url           VARCHAR2(256);
+    FUNCTION get_game_state_json(p_game_id IN NUMBER) RETURN CLOB
+    AS
+        l_json_clob             CLOB;
+        l_game                  GAMES%ROWTYPE;
+        l_current_board_state   VARCHAR2(1000);
+        l_image_url             VARCHAR2(256);
+        l_initial_optimal_moves NUMBER;
+        l_current_optimal_moves NUMBER;
+        l_progress              NUMBER := 0;
     BEGIN
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_game_id;
 
         IF l_game.STATUS = 'SOLVED' THEN
-             l_current_board_state := ''; 
-            FOR i IN 1..(l_game.BOARD_SIZE * l_game.BOARD_SIZE - 1) LOOP 
-                l_current_board_state := l_current_board_state || i || ','; 
-            END LOOP; 
-            l_current_board_state := l_current_board_state || '0'; 
+            -- Формируем решенное состояние доски
+            l_current_board_state := '';
+            FOR i IN 1..(l_game.BOARD_SIZE * l_game.BOARD_SIZE - 1) LOOP
+                l_current_board_state := l_current_board_state || i || ',';
+            END LOOP;
+            l_current_board_state := l_current_board_state || '0';
+            
+            -- Если игра решена, прогресс 100%
+            l_progress := 100;
+
         ELSE
+            -- Получаем текущее состояние доски из истории
             SELECT BOARD_STATE
             INTO l_current_board_state
             FROM MOVE_HISTORY
             WHERE GAME_ID = p_game_id AND MOVE_ORDER = l_game.CURRENT_MOVE_ORDER;
+
+            -- === ЛОГИКА РАСЧЕТА ПРОГРЕССА ===
+            l_initial_optimal_moves := l_game.OPTIMAL_MOVES;
+
+            IF l_initial_optimal_moves > 0 THEN
+                -- Вычисляем оптимальный путь из ТЕКУЩЕГО состояния
+                l_current_optimal_moves := calculate_optimal_path_length(
+                    p_board_state => l_current_board_state,
+                    p_board_size_param => l_game.BOARD_SIZE
+                );
+                
+                -- Рассчитываем прогресс в процентах
+                l_progress := TRUNC(((l_initial_optimal_moves - l_current_optimal_moves) / l_initial_optimal_moves) * 100);
+
+                -- Убедимся, что прогресс не отрицательный
+                IF l_progress < 0 THEN
+                    l_progress := 0;
+                END IF;
+            ELSE -- Если игра была решена за 0 ходов
+                l_progress := 100;
+            END IF;
+            -- ====================================
         END IF;
-        
+
         IF l_game.IMAGE_ID IS NOT NULL THEN
             l_image_url := '/api/image/' || l_game.IMAGE_ID;
         ELSE
             l_image_url := NULL;
         END IF;
 
+        -- Формируем итоговый JSON, добавив поле "progress"
         SELECT
             JSON_OBJECT(
                 'sessionId'  VALUE l_game.GAME_ID,
@@ -959,7 +996,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 'status'     VALUE l_game.STATUS,
                 'imageUrl'   VALUE l_image_url,
                 'stars'      VALUE l_game.STARS_EARNED,
-                'gameMode'   VALUE l_game.GAME_MODE
+                'gameMode'   VALUE l_game.GAME_MODE,
+                'progress'   VALUE l_progress -- <-- НОВОЕ ПОЛЕ
             )
         INTO l_json_clob
         FROM dual;
@@ -970,6 +1008,63 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             RETURN '{"status":"error", "message":"Session not found or history missing"}';
     END get_game_state_json;
     
+    -- =============================================================================
+    -- Вспомогательная функция для расчета оптимального пути (вставить в PACKAGE BODY)
+    -- =============================================================================
+    FUNCTION calculate_optimal_path_length(
+        p_board_state IN VARCHAR2,
+        p_board_size_param IN NUMBER
+    ) RETURN NUMBER
+    AS
+        l_path          GAME_MANAGER_PKG.t_path;
+        l_solution      GAME_MANAGER_PKG.t_path;
+        l_initial_node  GAME_MANAGER_PKG.t_node;
+        l_threshold     NUMBER;
+        l_result        NUMBER;
+        l_target_state  VARCHAR2(1000) := '';
+    BEGIN
+        -- Формируем целевое (решенное) состояние доски
+        FOR i IN 1..(p_board_size_param * p_board_size_param - 1) LOOP
+            l_target_state := l_target_state || i || ',';
+        END LOOP;
+        l_target_state := l_target_state || '0';
+
+        -- Инициализируем глобальные переменные для солвера
+        init_target_positions(state_to_table(l_target_state), p_board_size_param);
+
+        -- Настраиваем начальный узел для поиска
+        l_initial_node.board_state := state_to_table(p_board_state);
+        l_initial_node.g_cost := 0;
+        l_initial_node.h_cost := calculate_heuristic(l_initial_node.board_state);
+        l_path(1) := l_initial_node;
+        l_threshold := l_initial_node.h_cost;
+
+        -- Если эвристика равна 0, доска уже решена
+        IF l_threshold = 0 THEN
+            RETURN 0;
+        END IF;
+
+        -- Запускаем цикл поиска IDA*
+        LOOP
+            l_result := search(l_path, 0, l_threshold, l_solution);
+            IF l_result = -1 THEN -- Решение найдено
+                EXIT;
+            END IF;
+            l_threshold := l_result;
+            -- Ограничение, чтобы избежать бесконечного поиска на сложных досках
+            IF l_threshold > 80 THEN 
+                l_solution.DELETE; 
+                EXIT; 
+            END IF;
+        END LOOP;
+
+        IF l_solution.COUNT > 0 THEN
+            RETURN l_solution.COUNT - 1; -- Возвращаем длину пути
+        ELSE
+            RETURN 999; -- Возвращаем большое число, если решение не найдено
+        END IF;
+    END calculate_optimal_path_length;
+
     FUNCTION calculate_heuristic(p_board GAME_MANAGER_PKG.t_board) RETURN NUMBER 
     IS
         l_heuristic   NUMBER := 0;

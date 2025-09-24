@@ -45,6 +45,7 @@ body {
 
 main#app-container {
     padding: 20px;
+    /* padding: 5px 20px 20px 20px; */
 }
 
 h1 { font-size: 2.25rem; color: var(--text-color); margin-top: 10px; margin-bottom: 10px;}
@@ -450,4 +451,37 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: 25px 0; }
 .status-timeout {
     color: #e53e3e; /* danger-color */
     font-weight: bold;
+}
+
+/* --- Стили для обновлённой инфо-панели --- */
+
+/* Основной контейнер-флекс для трёх элементов */
+.info-panel {
+    display: flex;
+    justify-content: space-between; /* Распределяет элементы по краям и в центре */
+    align-items: center; /* Выравнивает всё по вертикали */
+    gap: 15px; /* Отступ между элементами */
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 20px;
+}
+
+/* Стили для каждого элемента в панели */
+.info-item {
+    display: flex;
+    flex-direction: column; /* Иконка/текст сверху, значение/бар снизу */
+    align-items: center;
+    gap: 5px;
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.info-item i {
+    font-size: 1.2rem;
+}
+
+.info-item span strong {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--text-color);
 }

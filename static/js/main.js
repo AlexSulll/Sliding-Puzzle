@@ -69,7 +69,8 @@ document.addEventListener('DOMContentLoaded', () => {
         statsStars: document.getElementById('stats-stars'),
         statsBestTime: document.getElementById('stats-best-time'),
         statsBestMoves: document.getElementById('stats-best-moves'),
-        restartBtn: document.getElementById('restart-btn')
+        restartBtn: document.getElementById('restart-btn'),
+        progressCounter: document.getElementById('progress-counter')
     };
 
     // === API Module: Simplified with a single action endpoint ===
@@ -290,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         updateLoginState: () => { const isLoggedIn = !!state.currentUser; DOMElements.userStatus.classList.toggle('hidden', !isLoggedIn); DOMElements.navMenu.classList.toggle('hidden', !isLoggedIn); if (isLoggedIn) { DOMElements.welcomeMessage.textContent = `Добро пожаловать, ${state.currentUser.name}!`; } },
         render: (gameState) => {
-            const { boardSize, boardState, moves, status, imageUrl, gameMode, stars } = gameState;
+            const { boardSize, boardState, moves, status, imageUrl, gameMode, stars, progress } = gameState;
             state.gameMode = gameMode;
             state.imageUrl = imageUrl;
             state.currentBoardState = boardState;
@@ -306,6 +307,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 DOMElements.winOverlay.classList.remove('hidden');
                 ui.renderUserStats();
             } else {
+                if (DOMElements.progressCounter && progress !== undefined) {
+                    DOMElements.progressCounter.textContent = `${progress}%`;
+                }
                 DOMElements.activeGameView.classList.remove('hidden');
                 DOMElements.winOverlay.classList.add('hidden');
                 document.documentElement.style.setProperty('--board-size', boardSize);
