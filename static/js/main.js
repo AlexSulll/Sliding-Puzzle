@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
         gameMode: 'INTS',
         imageUrl: null,
         imageId: null,
+        isUploadingForGameStart: false,
         isDaily: false,
         currentBoardState: [],
         boardSize: 0,
@@ -138,21 +139,33 @@ document.addEventListener('DOMContentLoaded', () => {
             const gameState = await api.performAction('start', settings);
 
             if (gameState && gameState.imageMissing) {
-                const choice = confirm("Картинка для этой игры была удалена. Хотите выбрать стандартную картинку?");
-                if (choice) {
-                    // const randomImageId = Math.floor(Math.random() * 3) + 1;
-                    // state.imageId = randomImageId;
-                    state.imageId = 1;
-                    state.gameMode = 'IMAGE'; // <-- ДОБАВЛЕНА ЭТА СТРОКА
+                const choiceStandard = confirm("Картинка для этой игры была удалена. Хотите выбрать стандартную картинку?");
+
+                if (choiceStandard) {
+                    // Пользователь согласился
+                    const randomImageId = Math.floor(Math.random() * 3) + 1;
+                    state.imageId = randomImageId;
+                    state.gameMode = 'IMAGE';
                     game.start(true, null);
                 } else {
-                    const switchToNumbers = confirm("Тогда продолжить с числами?");
-                    if (switchToNumbers) {
-                        state.imageId = null;
-                        state.gameMode = 'INTS';
-                        game.start(true, null);
+                    // 2. Второе предложение: загрузить свою.
+                    const choiceUpload = confirm("Хотите загрузить новую картинку?");
+                    if (choiceUpload) {
+                        // Пользователь согласился
+                        state.isUploadingForGameStart = true;
+                        DOMElements.imageUpload.click();
                     } else {
-                        ui.showScreen('settings');
+                        // 3. Третье предложение: сыграть с числами.
+                        const choiceNumbers = confirm("Тогда продолжить с числами?");
+                        if (choiceNumbers) {
+                            // Пользователь согласился
+                            state.imageId = null;
+                            state.gameMode = 'INTS';
+                            game.start(true, null);
+                        } else {
+                            // Пользователь от всего отказался, возвращаем на экран настроек.
+                            ui.showScreen('settings');
+                        }
                     }
                 }
                 return;
@@ -311,17 +324,25 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const res = await api.uploadImage(formData);
             
-            if (res && res.success) {
-                if (res.status === 'uploaded') {
+        if (res && res.success) {
+            if (res.status === 'uploaded') {
+                if (state.isUploadingForGameStart) {
+                    state.isUploadingForGameStart = false;
+                    state.imageId = res.newImage.id;
+                    state.gameMode = 'IMAGE';
+                    game.start(true, null);
+                } else {
                     DOMElements.customImageName.textContent = `Загружено: ${file.name}`;
                     ui.loadImages();
-                } else if (res.status === 'duplicate') {
-                    DOMElements.customImageName.textContent = 'Такая картинка уже есть.';
                 }
-            } else {
-                const errorMessage = res && res.error ? res.error : 'Ошибка загрузки.';
-                DOMElements.customImageName.textContent = errorMessage;
+            } else if (res.status === 'duplicate') {
+                DOMElements.customImageName.textContent = 'Такая картинка уже есть.';
+                if(state.isUploadingForGameStart) state.isUploadingForGameStart = false;
             }
+        } else {
+            const errorMessage = res && res.error ? res.error : 'Ошибка загрузки.';
+            DOMElements.customImageName.textContent = errorMessage;
+        }
 
             event.target.value = '';
         },

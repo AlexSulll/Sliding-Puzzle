@@ -717,14 +717,15 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     FUNCTION save_user_image(
         p_user_id    IN USERS.USER_ID%TYPE,
         p_mime_type  IN VARCHAR2,
-        p_file_path  IN VARCHAR2,  -- <-- ИСПРАВЛЕННАЯ СТРОКА
+        p_file_path  IN VARCHAR2,
         p_image_hash IN VARCHAR2
     ) RETURN VARCHAR2 
     AS 
         l_count       NUMBER; 
-        l_image_limit CONSTANT NUMBER := 7; 
+        l_image_limit CONSTANT NUMBER := 7;
+        l_new_image_id USER_IMAGES.IMAGE_ID%TYPE;
     BEGIN 
-        SELECT COUNT(*) INTO l_count FROM USER_IMAGES WHERE USER_ID = p_user_id; 
+        SELECT COUNT(*) INTO l_count FROM USER_IMAGES WHERE USER_ID = p_user_id AND FILE_PATH IS NOT NULL; 
         IF l_count >= l_image_limit THEN 
             RETURN '{"success": false, "error": "Достигнут лимит в 7 картинок."}';
         END IF; 
@@ -735,10 +736,19 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         END IF; 
         
         INSERT INTO USER_IMAGES (IMAGE_ID, USER_ID, MIME_TYPE, IMAGE_DATA, FILE_PATH, IMAGE_HASH, UPLOADED_AT) 
-        VALUES (USER_IMAGES_SEQ.NEXTVAL, p_user_id, p_mime_type, NULL, p_file_path, p_image_hash, SYSDATE); 
+        VALUES (USER_IMAGES_SEQ.NEXTVAL, p_user_id, p_mime_type, NULL, p_file_path, p_image_hash, SYSDATE)
+        RETURNING IMAGE_ID INTO l_new_image_id;
         
         COMMIT; 
-        RETURN '{"success": true, "status": "uploaded"}';
+        
+        RETURN JSON_OBJECT(
+            'success'  VALUE true, 
+            'status'   VALUE 'uploaded',
+            'newImage' VALUE JSON_OBJECT(
+                'id'   VALUE l_new_image_id,
+                'path' VALUE p_file_path
+            )
+        );
     EXCEPTION 
         WHEN DUP_VAL_ON_INDEX THEN 
             RETURN '{"success": true, "status": "duplicate"}';
