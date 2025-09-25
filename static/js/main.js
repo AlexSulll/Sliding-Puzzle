@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
         totalSeconds: 0,
         gameMode: 'INTS',
         imageUrl: null,
+        imageId: null,
         isDaily: false,
         currentBoardState: [],
         boardSize: 0,
@@ -124,8 +125,39 @@ document.addEventListener('DOMContentLoaded', () => {
     const game = {
         start: async (forceNew = false, replayGameId = null) => {
             const size = parseInt(DOMElements.boardSizeSelect.value, 10);
-            const settings = { isDailyChallenge: state.isDaily, gameMode: state.gameMode, imageUrl: state.imageUrl, size: size, difficulty: parseInt(DOMElements.difficultySelect.value, 10), forceNew: forceNew, replayGameId: replayGameId };
+            const settings = {
+                isDailyChallenge: state.isDaily,
+                gameMode: state.gameMode,
+                imageId: state.imageId,
+                size: size,
+                difficulty: parseInt(DOMElements.difficultySelect.value, 10),
+                forceNew: forceNew,
+                replayGameId: replayGameId
+            };
+            
             const gameState = await api.performAction('start', settings);
+
+            if (gameState && gameState.imageMissing) {
+                const choice = confirm("Картинка для этой игры была удалена. Хотите выбрать стандартную картинку?");
+                if (choice) {
+                    // const randomImageId = Math.floor(Math.random() * 3) + 1;
+                    // state.imageId = randomImageId;
+                    state.imageId = 1;
+                    state.gameMode = 'IMAGE'; // <-- ДОБАВЛЕНА ЭТА СТРОКА
+                    game.start(true, null);
+                } else {
+                    const switchToNumbers = confirm("Тогда продолжить с числами?");
+                    if (switchToNumbers) {
+                        state.imageId = null;
+                        state.gameMode = 'INTS';
+                        game.start(true, null);
+                    } else {
+                        ui.showScreen('settings');
+                    }
+                }
+                return;
+            }
+
             if (gameState && gameState.active_session_found && !replayGameId) {
                 if (confirm('У вас есть незаконченная игра. Хотите продолжить?')) {
                     ui.showScreen('game');
@@ -136,6 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 return;
             }
+
             if (gameState && gameState.sessionId) {
                 ui.showScreen('game');
                 ui.render(gameState);
@@ -182,18 +215,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const defaultImages = await api.performAction('get_default_images');
             if (defaultImages && defaultImages.length > 0) {
+                DOMElements.defaultImagePreviews.innerHTML = ''; // Очищаем контейнер
                 defaultImages.forEach(imgData => {
-                    const img = ui.createPreviewImage(`/api/image/${imgData.id}`, imgData.name);
+                    const path = `/api/image/${imgData.id}`;
+                    const img = ui.createPreviewImage(path, imgData.name, imgData.id);
                     DOMElements.defaultImagePreviews.appendChild(img);
                 });
             }
 
             const userImages = await api.performAction('get_user_images');
-
             if (userImages && userImages.length > 0) {
+                DOMElements.userImagePreviews.innerHTML = '';
                 userImages.forEach(imgData => {
+                    const path = `/static${imgData.path}`;
                     const altText = `User image ${imgData.id}`;
-                    const imgContainer = ui.createUserPreviewImage(imgData.id, altText);
+                    const imgContainer = ui.createUserPreviewImage(imgData.id, path, altText);
                     DOMElements.userImagePreviews.appendChild(imgContainer);
                 });
             } else {
@@ -211,20 +247,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         },
-        createPreviewImage: (path, alt) => {
+        createPreviewImage: (path, alt, id = null) => {
             const img = document.createElement('img');
             img.src = path;
             img.alt = alt;
             img.className = 'preview-img';
             img.dataset.src = path;
+            if (id) {
+                img.dataset.imageId = id;
+            }
             img.addEventListener('click', ui.handlePreviewClick);
             return img;
         },
-        createUserPreviewImage: (id, alt) => {
+        createUserPreviewImage: (id, path, alt) => {
             const container = document.createElement('div');
             container.className = 'preview-container';
 
-            const img = ui.createPreviewImage(`/api/image/${id}`, alt);
+            const img = ui.createPreviewImage(path, alt, id);
             container.appendChild(img);
 
             const deleteBtn = document.createElement('button');
@@ -236,9 +275,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return container;
         },
         handlePreviewClick: (event) => {
+            state.gameMode = 'IMAGE';
+            document.getElementById('mode-image').checked = true;
+            DOMElements.imageSelection.classList.remove('hidden');
             document.querySelectorAll('.preview-img').forEach(i => i.classList.remove('selected'));
             event.target.classList.add('selected');
             state.imageUrl = event.target.dataset.src;
+            state.imageId = event.target.dataset.imageId;
             DOMElements.customImageName.textContent = '';
             DOMElements.imageUpload.value = '';
         },
@@ -320,10 +363,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     else {
                         tile.dataset.value = value;
                         if (gameMode === 'IMAGE' && imageUrl) {
-                            const col = (value - 1) % boardSize; const row = Math.floor((value - 1) / boardSize);
-                            tile.style.backgroundImage = `url(${imageUrl})`;
+                            let finalImageUrl = imageUrl;
+                            if (imageUrl.startsWith('/uploads/')) {
+                                finalImageUrl = `/static${imageUrl}`;
+                            }
+                            const col = (value - 1) % boardSize;
+                            const row = Math.floor((value - 1) / boardSize);
+                            tile.style.backgroundImage = `url(${finalImageUrl})`;
                             tile.style.backgroundPosition = `${(col * 100) / (boardSize - 1)}% ${(row * 100) / (boardSize - 1)}%`;
-                        } else { tile.textContent = value; }
+                        } else {
+                            tile.textContent = value;
+                        }
                     }
                     DOMElements.gameBoard.appendChild(tile);
                 });

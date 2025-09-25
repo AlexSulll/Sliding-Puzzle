@@ -21,15 +21,8 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
     ----------------------------------------------------------------------------
     -- API: БЛОК АВТОРИЗАЦИИ
     ----------------------------------------------------------------------------
-    FUNCTION register_user(
-        p_username      IN VARCHAR2,
-        p_password_hash IN VARCHAR2
-    ) RETURN NUMBER;
-
-    FUNCTION login_user(
-        p_username      IN VARCHAR2,
-        p_password_hash IN VARCHAR2
-    ) RETURN NUMBER;
+    FUNCTION register_user(p_username IN VARCHAR2, p_password_hash IN VARCHAR2) RETURN CLOB;
+    FUNCTION login_user(p_username IN VARCHAR2, p_password_hash IN VARCHAR2) RETURN CLOB;
 
     ----------------------------------------------------------------------------
     -- API: БЛОК УПРАВЛЕНИЯ ИГРОЙ И СЕССИЯМИ
@@ -64,9 +57,9 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_session_id IN GAMES.GAME_ID%TYPE
     ) RETURN CLOB;
 
-    PROCEDURE abandon_game(
+    FUNCTION abandon_game(
         p_session_id IN GAMES.GAME_ID%TYPE
-    );
+    ) RETURN VARCHAR2;
     
     PROCEDURE timeout_game(
         p_session_id IN GAMES.GAME_ID%TYPE
@@ -95,9 +88,9 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
     FUNCTION save_user_image(
         p_user_id    IN USERS.USER_ID%TYPE,
         p_mime_type  IN VARCHAR2,
-        p_image_data IN BLOB,
+        p_file_path  IN VARCHAR2, -- <-- ИЗМЕНЕНО
         p_image_hash IN VARCHAR2
-    ) RETURN NUMBER;
+    ) RETURN VARCHAR2;
 
     FUNCTION get_user_images(
         p_user_id IN USERS.USER_ID%TYPE
@@ -117,10 +110,10 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         o_image_data OUT BLOB
     );
     
-    PROCEDURE delete_user_image(
-        p_user_id  IN USERS.USER_ID%TYPE,
+    FUNCTION delete_user_image(
+        p_user_id IN USERS.USER_ID%TYPE, 
         p_image_id IN USER_IMAGES.IMAGE_ID%TYPE
-    );
+    ) RETURN VARCHAR2;
     
     ----------------------------------------------------------------------------
     -- API: БЛОК ДЛЯ ПЛАНИРОВЩИКА
@@ -162,7 +155,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     FUNCTION register_user(
         p_username      IN VARCHAR2,
         p_password_hash IN VARCHAR2
-    ) RETURN NUMBER
+    ) RETURN CLOB
     AS
         l_user_id USERS.USER_ID%TYPE;
         l_count   NUMBER;
@@ -173,7 +166,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         WHERE USERNAME = p_username;
 
         IF l_count > 0 THEN
-            RETURN -1;
+            RETURN '{"success": false, "message": "Пользователь с таким именем уже существует."}';
         END IF;
 
         INSERT INTO USERS (USER_ID, USERNAME, PASSWORD_HASH)
@@ -181,24 +174,35 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         RETURNING USER_ID INTO l_user_id;
 
         COMMIT;
-        RETURN l_user_id;
+
+        RETURN JSON_OBJECT(
+            'success' VALUE true, 
+            'user' VALUE JSON_OBJECT(
+                'id'   VALUE l_user_id, 
+                'name' VALUE p_username
+            )
+        );
     END register_user;
 
     FUNCTION login_user(
         p_username      IN VARCHAR2,
         p_password_hash IN VARCHAR2
-    ) RETURN NUMBER
+    ) RETURN CLOB
     AS
         l_user_id USERS.USER_ID%TYPE;
     BEGIN
-        SELECT USER_ID
-        INTO l_user_id
-        FROM USERS
-        WHERE USERNAME = p_username AND PASSWORD_HASH = p_password_hash;
-        RETURN l_user_id;
+        SELECT USER_ID INTO l_user_id FROM USERS WHERE USERNAME = p_username AND PASSWORD_HASH = p_password_hash;
+
+        RETURN JSON_OBJECT(
+            'success' VALUE true, 
+            'user' VALUE JSON_OBJECT(
+                'id'   VALUE l_user_id, 
+                'name' VALUE p_username
+            )
+        );
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
-            RETURN 0;
+            RETURN '{"success": false, "message": "Неверное имя пользователя или пароль."}';
     END login_user;
 
     ----------------------------------------------------------------------------
@@ -283,8 +287,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         BEGIN
             SELECT GAME_ID INTO l_old_game_id
             FROM GAMES
-            WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE'
-            FETCH FIRST 1 ROWS ONLY;
+            WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE';
 
             IF l_old_game_id IS NOT NULL THEN
                 DELETE FROM MOVE_HISTORY WHERE GAME_ID = l_old_game_id;
@@ -405,11 +408,11 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         
         INSERT INTO GAMES (
             GAME_ID, USER_ID, STATUS, BOARD_SIZE, SHUFFLE_MOVES, GAME_MODE, MOVE_COUNT,
-            IMAGE_ID, CHALLENGE_ID, START_TIME, DURATION_SECONDS, STARS_EARNED,
+            IMAGE_ID, CHALLENGE_ID, START_TIME, COMPLETED_AT, STARS_EARNED,
             OPTIMAL_MOVES, CURRENT_MOVE_ORDER, INITIAL_BOARD_STATE
         ) VALUES (
             GAMES_SEQ.NEXTVAL, p_user_id, 'ACTIVE', l_size, l_shuffles, l_game_mode_to_use, 0,
-            l_image_id_to_use, l_challenge_id, SYSDATE, 0, 0,
+            l_image_id_to_use, l_challenge_id, SYSDATE, NULL, 0,
             l_optimal_moves, 0, l_start_state
         )
         RETURNING GAME_ID INTO l_game_id;
@@ -421,24 +424,23 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         RETURN get_game_state_json(l_game_id);
     END start_new_game;
     
-    PROCEDURE abandon_game(p_session_id IN GAMES.GAME_ID%TYPE) 
+    FUNCTION abandon_game(p_session_id IN GAMES.GAME_ID%TYPE)
+    RETURN VARCHAR2
     AS
-        l_duration   NUMBER;
         l_start_time DATE;
     BEGIN
         SELECT START_TIME INTO l_start_time FROM GAMES WHERE GAME_ID = p_session_id;
-        l_duration := ROUND((SYSDATE - l_start_time) * 86400);
 
         UPDATE GAMES
         SET STATUS = 'ABANDONED',
             COMPLETED_AT = SYSDATE,
-            DURATION_SECONDS = l_duration,
             CURRENT_MOVE_ORDER = NULL
         WHERE GAME_ID = p_session_id;
 
         DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
 
         COMMIT;
+        RETURN '{"success": true}';
     END abandon_game;
     
     PROCEDURE timeout_game(p_session_id IN GAMES.GAME_ID%TYPE)
@@ -449,7 +451,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
         UPDATE GAMES
         SET STATUS = 'TIMEOUT',
-            COMPLETED_AT = l_game.START_TIME + (l_game.DURATION_SECONDS / 86400),
+            COMPLETED_AT = l_game.START_TIME + (CEIL(10 * (l_game.BOARD_SIZE / 4)) / (24 * 60)),
             STARS_EARNED = 0,
             CURRENT_MOVE_ORDER = NULL
         WHERE GAME_ID = p_session_id;
@@ -479,7 +481,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             MOVE_COUNT = 0,
             CURRENT_MOVE_ORDER = 0,
             START_TIME = SYSDATE,
-            DURATION_SECONDS = 0,
+            COMPLETED_AT = NULL,
             STATUS = 'ACTIVE'
         WHERE GAME_ID = p_session_id;
         
@@ -504,8 +506,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_tile_idx          PLS_INTEGER; 
         l_is_adjacent       BOOLEAN := FALSE; 
         l_new_board_state   VARCHAR2(1000); 
-        l_stars             NUMBER := 0; 
-        l_duration          NUMBER; 
+        l_stars             NUMBER := 0;
         l_target_state      VARCHAR2(1000); 
     BEGIN 
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id AND STATUS = 'ACTIVE'; 
@@ -537,8 +538,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             END LOOP; 
             l_target_state := l_target_state || '0'; 
             
-            IF l_new_board_state = l_target_state THEN 
-                l_duration := ROUND((SYSDATE - l_game.START_TIME) * 86400); 
+            IF l_new_board_state = l_target_state THEN
                 
                 IF l_game.OPTIMAL_MOVES > 0 THEN 
                     IF (l_game.MOVE_COUNT + 1) <= l_game.OPTIMAL_MOVES THEN l_stars := 3; 
@@ -553,7 +553,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 SET STATUS = 'SOLVED', 
                     MOVE_COUNT = l_game.MOVE_COUNT + 1, 
                     COMPLETED_AT = SYSDATE, 
-                    DURATION_SECONDS = l_duration, 
                     STARS_EARNED = l_stars,
                     CURRENT_MOVE_ORDER = null
                 WHERE GAME_ID = p_session_id; 
@@ -703,7 +702,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 'date'   VALUE TO_CHAR(g.START_TIME, 'DD.MM.YYYY HH24:MI'),
                 'size'   VALUE g.BOARD_SIZE,
                 'moves'  VALUE g.MOVE_COUNT,
-                'time'   VALUE g.DURATION_SECONDS,
+                'time'   VALUE ROUND((g.COMPLETED_AT - g.START_TIME) * 86400),
                 'status' VALUE g.STATUS,
                 'stars'  VALUE g.STARS_EARNED
             ) ORDER BY g.START_TIME DESC
@@ -718,41 +717,43 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     FUNCTION save_user_image(
         p_user_id    IN USERS.USER_ID%TYPE,
         p_mime_type  IN VARCHAR2,
-        p_image_data IN BLOB,
+        p_file_path  IN VARCHAR2,  -- <-- ИСПРАВЛЕННАЯ СТРОКА
         p_image_hash IN VARCHAR2
-    ) RETURN NUMBER 
+    ) RETURN VARCHAR2 
     AS 
         l_count       NUMBER; 
         l_image_limit CONSTANT NUMBER := 7; 
     BEGIN 
         SELECT COUNT(*) INTO l_count FROM USER_IMAGES WHERE USER_ID = p_user_id; 
         IF l_count >= l_image_limit THEN 
-            RETURN 2; 
+            RETURN '{"success": false, "error": "Достигнут лимит в 7 картинок."}';
         END IF; 
         
         SELECT COUNT(*) INTO l_count FROM USER_IMAGES WHERE USER_ID = p_user_id AND IMAGE_HASH = p_image_hash; 
         IF l_count > 0 THEN 
-            RETURN 0; 
+            RETURN '{"success": true, "status": "duplicate"}';
         END IF; 
         
-        INSERT INTO USER_IMAGES (IMAGE_ID, USER_ID, MIME_TYPE, IMAGE_DATA, IMAGE_HASH, UPLOADED_AT) 
-        VALUES (USER_IMAGES_SEQ.NEXTVAL, p_user_id, p_mime_type, p_image_data, p_image_hash, SYSDATE); 
+        INSERT INTO USER_IMAGES (IMAGE_ID, USER_ID, MIME_TYPE, IMAGE_DATA, FILE_PATH, IMAGE_HASH, UPLOADED_AT) 
+        VALUES (USER_IMAGES_SEQ.NEXTVAL, p_user_id, p_mime_type, NULL, p_file_path, p_image_hash, SYSDATE); 
         
         COMMIT; 
-        RETURN 1; 
+        RETURN '{"success": true, "status": "uploaded"}';
     EXCEPTION 
         WHEN DUP_VAL_ON_INDEX THEN 
-            RETURN 0; 
+            RETURN '{"success": true, "status": "duplicate"}';
     END save_user_image;
 
     FUNCTION get_user_images(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB 
     AS 
         l_json CLOB; 
     BEGIN 
-        SELECT JSON_ARRAYAGG(JSON_OBJECT('id' VALUE IMAGE_ID) ORDER BY UPLOADED_AT DESC) 
+        SELECT JSON_ARRAYAGG(
+        JSON_OBJECT('id' VALUE IMAGE_ID, 'path' VALUE FILE_PATH) ORDER BY UPLOADED_AT DESC
+        ) 
         INTO l_json 
         FROM USER_IMAGES 
-        WHERE USER_ID = p_user_id; 
+        WHERE USER_ID = p_user_id AND FILE_PATH IS NOT NULL; 
         
         RETURN NVL(l_json, '[]'); 
     END get_user_images;
@@ -795,15 +796,18 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         WHERE IMAGE_ID = p_image_id AND USER_ID IS NULL; 
     END get_default_image_data;
     
-    PROCEDURE delete_user_image(
+    FUNCTION delete_user_image(
         p_user_id  IN USERS.USER_ID%TYPE,
         p_image_id IN USER_IMAGES.IMAGE_ID%TYPE
-    ) 
+    )
+    RETURN VARCHAR2
     AS 
     BEGIN 
         DELETE FROM USER_IMAGES 
         WHERE IMAGE_ID = p_image_id AND USER_ID = p_user_id; 
-        COMMIT; 
+        COMMIT;
+
+        RETURN '{"success": true, "message": "Image deleted"}';
     END delete_user_image;
 
     ----------------------------------------------------------------------------
@@ -980,7 +984,14 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         END IF;
 
         IF l_game.IMAGE_ID IS NOT NULL THEN
-            l_image_url := '/api/image/' || l_game.IMAGE_ID;
+            -- Проверяем, как хранится картинка
+            SELECT FILE_PATH INTO l_image_url 
+            FROM USER_IMAGES 
+            WHERE IMAGE_ID = l_game.IMAGE_ID;
+
+            IF l_image_url IS NULL THEN
+                l_image_url := '/api/image/' || l_game.IMAGE_ID;
+            END IF;
         ELSE
             l_image_url := NULL;
         END IF;
@@ -1285,7 +1296,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         -- Получаем статистику из решенных игр
         SELECT
             NVL(SUM(STARS_EARNED), 0),
-            NVL(MIN(CASE WHEN STATUS = 'SOLVED' THEN DURATION_SECONDS END), 0),
+            NVL(MIN(CASE WHEN STATUS = 'SOLVED' THEN ROUND((COMPLETED_AT - START_TIME) * 86400) END), 0),
             NVL(MIN(CASE WHEN STATUS = 'SOLVED' THEN MOVE_COUNT END), 0)
         INTO
             l_total_stars,
