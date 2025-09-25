@@ -88,7 +88,7 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
     FUNCTION save_user_image(
         p_user_id    IN USERS.USER_ID%TYPE,
         p_mime_type  IN VARCHAR2,
-        p_file_path  IN VARCHAR2, -- <-- ИЗМЕНЕНО
+        p_file_path  IN VARCHAR2,
         p_image_hash IN VARCHAR2
     ) RETURN VARCHAR2;
 
@@ -124,10 +124,17 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_user_id IN USERS.USER_ID%TYPE
     ) RETURN CLOB;
 
-    FUNCTION calculate_optimal_path_length(
-        p_board_state IN VARCHAR2,
-        p_board_size_param IN NUMBER
-    ) RETURN NUMBER;
+    FUNCTION get_target_state(p_size IN NUMBER) RETURN VARCHAR2;
+    FUNCTION shuffle_board(p_target_state IN VARCHAR2, p_shuffles IN NUMBER, p_size IN NUMBER) RETURN VARCHAR2;
+    FUNCTION state_to_table(p_state IN VARCHAR2) RETURN GAME_MANAGER_PKG.t_board;
+    FUNCTION table_to_state(p_table IN GAME_MANAGER_PKG.t_board) RETURN VARCHAR2;
+    FUNCTION get_game_state_json(p_game_id IN NUMBER) RETURN CLOB;
+    FUNCTION calculate_heuristic(p_board GAME_MANAGER_PKG.t_board) RETURN NUMBER;
+    PROCEDURE init_target_positions(p_target_board GAME_MANAGER_PKG.t_board, p_size NUMBER);
+    FUNCTION is_state_in_path(p_path GAME_MANAGER_PKG.t_path, p_board GAME_MANAGER_PKG.t_board) RETURN BOOLEAN;
+    FUNCTION search(p_path IN OUT NOCOPY GAME_MANAGER_PKG.t_path, p_g_cost IN NUMBER, p_threshold IN NUMBER, o_solution OUT NOCOPY GAME_MANAGER_PKG.t_path) RETURN NUMBER;
+    FUNCTION calculate_optimal_path_length(p_board_state IN VARCHAR2, p_board_size_param IN NUMBER) RETURN NUMBER;
+    FUNCTION get_next_best_move(p_board_state IN VARCHAR2, p_target_board_state IN VARCHAR2, p_board_size_param IN NUMBER) RETURN NUMBER;
 
 END GAME_MANAGER_PKG;
 /
@@ -140,15 +147,17 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     g_target_positions GAME_MANAGER_PKG.t_board;
     g_board_size       NUMBER;
     
-    FUNCTION state_to_table(p_state IN VARCHAR2) RETURN GAME_MANAGER_PKG.t_board;
-    FUNCTION table_to_state(p_table IN GAME_MANAGER_PKG.t_board) RETURN VARCHAR2;
-    FUNCTION get_game_state_json(p_game_id IN NUMBER) RETURN CLOB;
-    FUNCTION calculate_heuristic(p_board GAME_MANAGER_PKG.t_board) RETURN NUMBER;
-    PROCEDURE init_target_positions(p_target_board GAME_MANAGER_PKG.t_board, p_size NUMBER);
-    FUNCTION is_state_in_path(p_path GAME_MANAGER_PKG.t_path, p_board GAME_MANAGER_PKG.t_board) RETURN BOOLEAN;
-    FUNCTION search(p_path IN OUT NOCOPY GAME_MANAGER_PKG.t_path, p_g_cost IN NUMBER, p_threshold IN NUMBER, o_solution OUT NOCOPY GAME_MANAGER_PKG.t_path) RETURN NUMBER;
-    FUNCTION get_next_best_move(p_board_state IN VARCHAR2, p_target_board_state IN VARCHAR2, p_board_size_param IN NUMBER) RETURN NUMBER;
-    
+    FUNCTION get_target_state(p_size IN NUMBER) RETURN VARCHAR2
+    IS
+        l_target_state VARCHAR2(1000) := '';
+    BEGIN
+        FOR i IN 1..(p_size*p_size - 1) LOOP 
+            l_target_state := l_target_state || i || ','; 
+        END LOOP; 
+        l_target_state := l_target_state || '0';
+        RETURN l_target_state;
+    END get_target_state;
+
     ----------------------------------------------------------------------------
     -- РЕАЛИЗАЦИЯ: БЛОК АВТОРИЗАЦИИ
     ----------------------------------------------------------------------------
@@ -160,10 +169,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_user_id USERS.USER_ID%TYPE;
         l_count   NUMBER;
     BEGIN
-        SELECT COUNT(*)
-        INTO l_count
-        FROM USERS
-        WHERE USERNAME = p_username;
+        SELECT COUNT(*) INTO l_count FROM USERS WHERE USERNAME = p_username;
 
         IF l_count > 0 THEN
             RETURN '{"success": false, "message": "Пользователь с таким именем уже существует."}';
@@ -174,13 +180,10 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         RETURNING USER_ID INTO l_user_id;
 
         COMMIT;
-
+        
         RETURN JSON_OBJECT(
             'success' VALUE true, 
-            'user' VALUE JSON_OBJECT(
-                'id'   VALUE l_user_id, 
-                'name' VALUE p_username
-            )
+            'user' VALUE JSON_OBJECT( 'id' VALUE l_user_id, 'name' VALUE p_username )
         );
     END register_user;
 
@@ -195,10 +198,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
         RETURN JSON_OBJECT(
             'success' VALUE true, 
-            'user' VALUE JSON_OBJECT(
-                'id'   VALUE l_user_id, 
-                'name' VALUE p_username
-            )
+            'user' VALUE JSON_OBJECT( 'id' VALUE l_user_id, 'name' VALUE p_username )
         );
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
@@ -219,11 +219,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             WHERE STATUS = 'ACTIVE'
         ) LOOP
             IF rec.EXPIRATION_TIME < SYSDATE THEN
-                -- --- ИСПРАВЛЕНО: Удалена строка с CURRENT_MOVE_ORDER = null ---
                 UPDATE GAMES
-                SET STATUS = 'ABANDONED',
-                    COMPLETED_AT = rec.EXPIRATION_TIME,
-                    CURRENT_MOVE_ORDER = NULL
+                SET STATUS = 'ABANDONED', COMPLETED_AT = rec.EXPIRATION_TIME, CURRENT_MOVE_ORDER = NULL
                 WHERE GAME_ID = rec.GAME_ID;
 
                 DELETE FROM MOVE_HISTORY WHERE GAME_ID = rec.GAME_ID;
@@ -239,10 +236,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     BEGIN
         cleanup_expired_games; 
         
-        SELECT GAME_ID 
-        INTO l_game_id 
-        FROM GAMES 
-        WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE';
+        SELECT GAME_ID INTO l_game_id FROM GAMES WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE';
 
         l_json_clob := get_game_state_json(l_game_id);
         l_json_clob := SUBSTR(l_json_clob, 1, LENGTH(l_json_clob) - 1) || ',"active_session_found":true}';
@@ -282,41 +276,28 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             END;
         END IF;
         
-        DECLARE
-            l_old_game_id GAMES.GAME_ID%TYPE;
-        BEGIN
-            SELECT GAME_ID INTO l_old_game_id
-            FROM GAMES
-            WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE';
-
-            IF l_old_game_id IS NOT NULL THEN
-                DELETE FROM MOVE_HISTORY WHERE GAME_ID = l_old_game_id;
-                DELETE FROM GAMES WHERE GAME_ID = l_old_game_id;
-            END IF;
-        EXCEPTION
-            WHEN NO_DATA_FOUND THEN
-                NULL;
-        END;
+        -- Очистка предыдущей активной сессии, если она была
+        FOR rec IN (SELECT GAME_ID FROM GAMES WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE') LOOP
+            DELETE FROM MOVE_HISTORY WHERE GAME_ID = rec.GAME_ID;
+            DELETE FROM GAMES WHERE GAME_ID = rec.GAME_ID;
+        END LOOP;
         
         IF p_replay_game_id IS NOT NULL THEN
+            -- Логика переигровки
             DECLARE
                 l_original_game GAMES%ROWTYPE;
             BEGIN
                 SELECT * INTO l_original_game FROM GAMES WHERE GAME_ID = p_replay_game_id;
-                
-                -- --- ИСПРАВЛЕНО: Используется правильное имя поля INITIAL_BOARD_STATE ---
                 l_start_state       := l_original_game.INITIAL_BOARD_STATE; 
                 l_size              := l_original_game.BOARD_SIZE;
                 l_shuffles          := l_original_game.SHUFFLE_MOVES;
-                l_game_mode_to_use  := l_original_game.GAME_MODE;
-                l_image_id_to_use   := l_original_game.IMAGE_ID;
+                l_game_mode_to_use  := NVL(p_game_mode, l_original_game.GAME_MODE);
+                l_image_id_to_use   := NVL(p_image_id, l_original_game.IMAGE_ID);
                 l_challenge_id      := l_original_game.CHALLENGE_ID;
                 l_optimal_moves     := l_original_game.OPTIMAL_MOVES;
-            EXCEPTION
-                WHEN NO_DATA_FOUND THEN
-                    RETURN '{"error":"Original game for replay not found"}';
             END;
         ELSIF p_is_daily_challenge THEN
+            -- Логика ежедневного челленджа
             DECLARE 
                 l_daily DAILY_CHALLENGES%ROWTYPE; 
             BEGIN 
@@ -327,82 +308,16 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 l_start_state     := l_daily.BOARD_STATE;
                 l_optimal_moves   := l_daily.OPTIMAL_MOVES;
                 l_image_id_to_use := l_daily.IMAGE_ID;
-                IF l_daily.IMAGE_ID IS NOT NULL THEN
-                    l_game_mode_to_use := 'IMAGE';
-                ELSE
-                    l_game_mode_to_use := 'INTS';
-                END IF;
-            EXCEPTION 
-                WHEN NO_DATA_FOUND THEN 
-                    RETURN '{"error":"Daily challenge not found for today"}'; 
+                l_game_mode_to_use := CASE WHEN l_daily.IMAGE_ID IS NOT NULL THEN 'IMAGE' ELSE 'INTS' END;
             END;
         ELSE
+            -- Логика обычной игры
             DECLARE 
                 l_target_state VARCHAR2(1000); 
             BEGIN 
-                l_target_state := ''; 
-                FOR i IN 1..(l_size*l_size - 1) LOOP 
-                    l_target_state := l_target_state || i || ','; 
-                END LOOP; 
-                l_target_state := l_target_state || '0'; 
-                
-                LOOP 
-                    DECLARE 
-                        l_board GAME_MANAGER_PKG.t_board := state_to_table(l_target_state); 
-                        l_empty_idx PLS_INTEGER := l_size*l_size; 
-                    BEGIN 
-                        FOR i IN 1..l_shuffles LOOP 
-                            DECLARE 
-                                l_possible_moves GAME_MANAGER_PKG.t_board; 
-                                l_move_to_idx PLS_INTEGER; 
-                                l_rand_move PLS_INTEGER; 
-                                l_temp NUMBER; 
-                                k PLS_INTEGER := 1; 
-                            BEGIN 
-                                IF MOD(l_empty_idx - 1, l_size) > 0 THEN l_possible_moves(k) := l_empty_idx - 1; k := k + 1; END IF; 
-                                IF MOD(l_empty_idx - 1, l_size) < l_size - 1 THEN l_possible_moves(k) := l_empty_idx + 1; k := k + 1; END IF; 
-                                IF l_empty_idx - l_size > 0 THEN l_possible_moves(k) := l_empty_idx - l_size; k := k + 1; END IF; 
-                                IF l_empty_idx + l_size <= l_size*l_size THEN l_possible_moves(k) := l_empty_idx + l_size; END IF; 
-                                l_rand_move := TRUNC(DBMS_RANDOM.VALUE(1, l_possible_moves.COUNT + 1)); 
-                                l_move_to_idx := l_possible_moves(l_rand_move); 
-                                l_temp := l_board(l_move_to_idx); 
-                                l_board(l_move_to_idx) := l_board(l_empty_idx); 
-                                l_board(l_empty_idx) := l_temp; 
-                                l_empty_idx := l_move_to_idx; 
-                            END; 
-                        END LOOP; 
-                        l_start_state := table_to_state(l_board); 
-                    END; 
-                    EXIT WHEN l_start_state != l_target_state; 
-                END LOOP; 
-                
-                DECLARE 
-                    l_path GAME_MANAGER_PKG.t_path; 
-                    l_solution GAME_MANAGER_PKG.t_path; 
-                    l_initial_node GAME_MANAGER_PKG.t_node; 
-                    l_threshold NUMBER; 
-                    l_result NUMBER; 
-                BEGIN 
-                    init_target_positions(state_to_table(l_target_state), l_size); 
-                    l_initial_node.board_state := state_to_table(l_start_state); 
-                    l_initial_node.g_cost := 0; 
-                    l_initial_node.h_cost := calculate_heuristic(l_initial_node.board_state); 
-                    l_path(1) := l_initial_node; 
-                    l_threshold := l_initial_node.h_cost; 
-                    
-                    LOOP 
-                        l_result := search(l_path, 0, l_threshold, l_solution); 
-                        IF l_result = -1 THEN EXIT; END IF; 
-                        l_threshold := l_result; 
-                        IF l_threshold > 80 THEN l_solution.DELETE; EXIT; END IF; 
-                    END LOOP; 
-                    
-                    IF l_solution.COUNT > 0 THEN
-                        l_optimal_moves := l_solution.COUNT - 1; 
-                    ELSE
-                        l_optimal_moves := 0;
-                    END IF;
-                END;
+                l_target_state := get_target_state(l_size);
+                l_start_state := shuffle_board(l_target_state, l_shuffles, l_size);
+                l_optimal_moves := calculate_optimal_path_length(l_start_state, l_size);
             END;
         END IF;
         
@@ -532,14 +447,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             l_board(l_tile_idx) := 0; 
             l_new_board_state := table_to_state(l_board); 
             
-            l_target_state := ''; 
-            FOR i IN 1..(l_game.BOARD_SIZE * l_game.BOARD_SIZE - 1) LOOP 
-                l_target_state := l_target_state || i || ','; 
-            END LOOP; 
-            l_target_state := l_target_state || '0'; 
+            l_target_state := get_target_state(l_game.BOARD_SIZE);
             
             IF l_new_board_state = l_target_state THEN
-                
                 IF l_game.OPTIMAL_MOVES > 0 THEN 
                     IF (l_game.MOVE_COUNT + 1) <= l_game.OPTIMAL_MOVES THEN l_stars := 3; 
                     ELSIF (l_game.MOVE_COUNT + 1) <= l_game.OPTIMAL_MOVES * 1.2 THEN l_stars := 2; 
@@ -550,53 +460,18 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 END IF; 
                 
                 UPDATE GAMES 
-                SET STATUS = 'SOLVED', 
-                    MOVE_COUNT = l_game.MOVE_COUNT + 1, 
-                    COMPLETED_AT = SYSDATE, 
-                    STARS_EARNED = l_stars,
-                    CURRENT_MOVE_ORDER = null
+                SET STATUS = 'SOLVED', MOVE_COUNT = l_game.MOVE_COUNT + 1, COMPLETED_AT = SYSDATE, 
+                    STARS_EARNED = l_stars, CURRENT_MOVE_ORDER = null
                 WHERE GAME_ID = p_session_id; 
                 
                 DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
-
                 COMMIT;
-
-                DECLARE
-                    l_final_json CLOB;
-                    l_image_url VARCHAR2(256);
-                BEGIN
-                    IF l_game.IMAGE_ID IS NOT NULL THEN
-                        l_image_url := '/api/image/' || l_game.IMAGE_ID;
-                    END IF;
-
-                    SELECT
-                        JSON_OBJECT(
-                            'sessionId'  VALUE l_game.GAME_ID,
-                            'boardSize'  VALUE l_game.BOARD_SIZE,
-                            'boardState' VALUE JSON_QUERY('[' || l_new_board_state || ']', '$'),
-                            'moves'      VALUE l_game.MOVE_COUNT + 1,
-                            'startTime'  VALUE TO_CHAR(l_game.START_TIME, 'YYYY-MM-DD"T"HH24:MI:SS'),
-                            'status'     VALUE 'SOLVED',
-                            'imageUrl'   VALUE l_image_url,
-                            'stars'      VALUE l_stars,
-                            'gameMode'   VALUE l_game.GAME_MODE
-                        )
-                    INTO l_final_json
-                    FROM dual;
-                    RETURN l_final_json;
-                END;
+                RETURN get_game_state_json(p_session_id);
                 
             ELSE 
-                DELETE FROM MOVE_HISTORY 
-                WHERE GAME_ID = p_session_id AND MOVE_ORDER > l_game.CURRENT_MOVE_ORDER; 
-                
-                INSERT INTO MOVE_HISTORY (MOVE_ID, GAME_ID, MOVE_ORDER, BOARD_STATE) 
-                VALUES (MOVE_HISTORY_SEQ.NEXTVAL, p_session_id, l_game.CURRENT_MOVE_ORDER + 1, l_new_board_state); 
-                
-                UPDATE GAMES 
-                SET MOVE_COUNT = l_game.MOVE_COUNT + 1, 
-                    CURRENT_MOVE_ORDER = l_game.CURRENT_MOVE_ORDER + 1
-                WHERE GAME_ID = p_session_id; 
+                DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id AND MOVE_ORDER > l_game.CURRENT_MOVE_ORDER; 
+                INSERT INTO MOVE_HISTORY (MOVE_ID, GAME_ID, MOVE_ORDER, BOARD_STATE) VALUES (MOVE_HISTORY_SEQ.NEXTVAL, p_session_id, l_game.CURRENT_MOVE_ORDER + 1, l_new_board_state); 
+                UPDATE GAMES SET MOVE_COUNT = l_game.MOVE_COUNT + 1, CURRENT_MOVE_ORDER = l_game.CURRENT_MOVE_ORDER + 1 WHERE GAME_ID = p_session_id; 
             END IF; 
             COMMIT; 
         END IF; 
@@ -836,11 +711,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         FROM MOVE_HISTORY 
         WHERE GAME_ID = p_session_id AND MOVE_ORDER = l_game.CURRENT_MOVE_ORDER; 
         
-        l_target_state := ''; 
-        FOR i IN 1..(l_game.BOARD_SIZE * l_game.BOARD_SIZE - 1) LOOP 
-            l_target_state := l_target_state || i || ','; 
-        END LOOP; 
-        l_target_state := l_target_state || '0'; 
+        l_target_state := get_target_state(l_game.BOARD_SIZE);
         
         l_tile_to_move := get_next_best_move( 
             p_board_state        => l_current_state, 
@@ -858,6 +729,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_optimal_moves  NUMBER; 
         l_next_day       DATE := TRUNC(SYSDATE) + 1; 
         l_count          NUMBER; 
+        l_target_state   VARCHAR2(1000);
     BEGIN 
         SELECT COUNT(*) INTO l_count FROM DAILY_CHALLENGES WHERE CHALLENGE_DATE = l_next_day; 
         IF l_count > 0 THEN RETURN; END IF; 
@@ -866,68 +738,11 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         IF l_board_size = 3 THEN l_shuffle_moves := TRUNC(DBMS_RANDOM.VALUE(20, 31)); 
         ELSE l_shuffle_moves := TRUNC(DBMS_RANDOM.VALUE(40, 71)); END IF; 
         
-        DECLARE 
-            l_target_state VARCHAR2(1000) := ''; 
-        BEGIN 
-            FOR i IN 1..(l_board_size * l_board_size - 1) LOOP 
-                l_target_state := l_target_state || i || ','; 
-            END LOOP; 
-            l_target_state := l_target_state || '0'; 
-            
-            LOOP 
-                DECLARE 
-                    l_board GAME_MANAGER_PKG.t_board := state_to_table(l_target_state); 
-                    l_empty_idx PLS_INTEGER := l_board_size * l_board_size; 
-                BEGIN 
-                    FOR i IN 1..l_shuffle_moves LOOP 
-                        DECLARE 
-                            l_possible_moves GAME_MANAGER_PKG.t_board; 
-                            l_move_to_idx PLS_INTEGER; 
-                            l_rand_move PLS_INTEGER; 
-                            l_temp NUMBER; 
-                            k PLS_INTEGER := 1; 
-                        BEGIN 
-                            IF MOD(l_empty_idx - 1, l_board_size) > 0 THEN l_possible_moves(k) := l_empty_idx - 1; k := k + 1; END IF; 
-                            IF MOD(l_empty_idx - 1, l_board_size) < l_board_size - 1 THEN l_possible_moves(k) := l_empty_idx + 1; k := k + 1; END IF; 
-                            IF l_empty_idx - l_board_size > 0 THEN l_possible_moves(k) := l_empty_idx - l_board_size; k := k + 1; END IF; 
-                            IF l_empty_idx + l_board_size <= l_board_size*l_board_size THEN l_possible_moves(k) := l_empty_idx + l_board_size; END IF; 
-                            l_rand_move := TRUNC(DBMS_RANDOM.VALUE(1, l_possible_moves.COUNT + 1)); 
-                            l_move_to_idx := l_possible_moves(l_rand_move); 
-                            l_temp := l_board(l_move_to_idx); 
-                            l_board(l_move_to_idx) := l_board(l_empty_idx); 
-                            l_board(l_empty_idx) := l_temp; 
-                            l_empty_idx := l_move_to_idx; 
-                        END; 
-                    END LOOP; 
-                    l_shuffled_board := table_to_state(l_board); 
-                END; 
-                EXIT WHEN l_shuffled_board != l_target_state; 
-            END LOOP; 
-            
-            DECLARE 
-                l_path GAME_MANAGER_PKG.t_path; 
-                l_solution GAME_MANAGER_PKG.t_path; 
-                l_initial_node GAME_MANAGER_PKG.t_node; 
-                l_threshold NUMBER; 
-                l_result NUMBER; 
-            BEGIN 
-                init_target_positions(state_to_table(l_target_state), l_board_size); 
-                l_initial_node.board_state := state_to_table(l_shuffled_board); 
-                l_initial_node.g_cost := 0; 
-                l_initial_node.h_cost := calculate_heuristic(l_initial_node.board_state); 
-                l_path(1) := l_initial_node; 
-                l_threshold := l_initial_node.h_cost; 
-                
-                LOOP 
-                    l_result := search(l_path, 0, l_threshold, l_solution); 
-                    IF l_result = -1 THEN EXIT; END IF; 
-                    l_threshold := l_result; 
-                    IF l_threshold > 80 THEN l_solution.DELETE; EXIT; END IF; 
-                END LOOP; 
-                
-                l_optimal_moves := l_solution.COUNT - 1; 
-            END; 
-        END; 
+        l_target_state := get_target_state(l_board_size);
+        
+        l_shuffled_board := shuffle_board(l_target_state, l_shuffle_moves, l_board_size);
+        
+        l_optimal_moves := calculate_optimal_path_length(l_shuffled_board, l_board_size);
 
         INSERT INTO DAILY_CHALLENGES (
             CHALLENGE_ID, CHALLENGE_DATE, BOARD_SIZE, SHUFFLE_MOVES, BOARD_STATE, OPTIMAL_MOVES
@@ -940,6 +755,47 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     ----------------------------------------------------------------------------
     -- РЕАЛИЗАЦИЯ: ПРИВАТНЫЕ УТИЛИТЫ
     ----------------------------------------------------------------------------
+    FUNCTION shuffle_board(
+        p_target_state IN VARCHAR2, 
+        p_shuffles IN NUMBER, 
+        p_size IN NUMBER
+    ) RETURN VARCHAR2
+    IS
+        l_shuffled_state VARCHAR2(1000);
+    BEGIN
+        LOOP 
+            DECLARE 
+                l_board GAME_MANAGER_PKG.t_board := state_to_table(p_target_state); 
+                l_empty_idx PLS_INTEGER := p_size*p_size; 
+            BEGIN 
+                FOR i IN 1..p_shuffles LOOP 
+                    DECLARE 
+                        l_possible_moves GAME_MANAGER_PKG.t_board; 
+                        k PLS_INTEGER := 1; 
+                    BEGIN 
+                        IF MOD(l_empty_idx - 1, p_size) > 0 THEN l_possible_moves(k) := l_empty_idx - 1; k := k + 1; END IF; 
+                        IF MOD(l_empty_idx - 1, p_size) < p_size - 1 THEN l_possible_moves(k) := l_empty_idx + 1; k := k + 1; END IF; 
+                        IF l_empty_idx - p_size > 0 THEN l_possible_moves(k) := l_empty_idx - p_size; k := k + 1; END IF; 
+                        IF l_empty_idx + p_size <= p_size*p_size THEN l_possible_moves(k) := l_empty_idx + p_size; END IF; 
+                        
+                        DECLARE
+                            l_rand_move PLS_INTEGER := TRUNC(DBMS_RANDOM.VALUE(1, l_possible_moves.COUNT + 1)); 
+                            l_move_to_idx PLS_INTEGER := l_possible_moves(l_rand_move); 
+                            l_temp NUMBER := l_board(l_move_to_idx); 
+                        BEGIN
+                            l_board(l_move_to_idx) := l_board(l_empty_idx); 
+                            l_board(l_empty_idx) := l_temp; 
+                            l_empty_idx := l_move_to_idx; 
+                        END;
+                    END; 
+                END LOOP; 
+                l_shuffled_state := table_to_state(l_board); 
+            END; 
+            EXIT WHEN l_shuffled_state != p_target_state; 
+        END LOOP;
+        RETURN l_shuffled_state;
+    END shuffle_board;
+
     FUNCTION get_game_state_json(p_game_id IN NUMBER) RETURN CLOB
     AS
         l_json_clob             CLOB;
@@ -960,7 +816,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             END LOOP;
             l_current_board_state := l_current_board_state || '0';
             
-            -- Если игра решена, прогресс 100%
             l_progress := 100;
 
         ELSE
