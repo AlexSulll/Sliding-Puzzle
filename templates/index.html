@@ -10,7 +10,7 @@
 </head>
 <body>
 
-    <div id="user-stats-panel" class="hidden">
+    <!-- <div id="user-stats-panel" class="hidden">
         <h3><i class="fas fa-chart-bar"></i> Моя статистика</h3>
         <ul>
             <li><strong>Игрок:</strong> <span id="stats-username"></span></li>
@@ -18,36 +18,34 @@
             <li><strong>Лучшее время:</strong> <span id="stats-best-time"></span></li>
             <li><strong>Мин. ходов:</strong> <span id="stats-best-moves"></span></li>
         </ul>
-    </div>
+    </div> -->
 
     <div class="main-container">
         <header class="main-header">
             <h1>Пятнашки</h1>
             <div id="user-status" class="hidden">
                 <span id="welcome-message"></span>
-                <button id="logout-btn" class="nav-btn">Выйти</button>
             </div>
-            <div id="nav-menu" class="nav-buttons hidden">
-                <button class="nav-btn active" data-screen="settings">
-                    <i class="fas fa-play"></i> Играть
-                </button>
-                <button class="nav-btn" data-screen="history">
-                    <i class="fas fa-history"></i> История
-                </button>
-                <button class="nav-btn" data-screen="leaderboard">
-                    <i class="fas fa-trophy"></i> Рейтинги
-                </button>
-            </div>
+            <nav id="nav-menu" class="nav-buttons hidden">
+                <button class="nav-btn active" data-screen="settings"><i class="fas fa-play"></i> Играть</button>
+                <button class="nav-btn" data-screen="history"><i class="fas fa-history"></i> История</button>
+                <button class="nav-btn" data-screen="leaderboard"><i class="fas fa-trophy"></i> Рейтинги</button>
+                <button id="logout-btn" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Выйти</button>
+            </nav>
         </header>
 
         <main id="app-container">
-            <div id="auth-screen" class="screen active">
-                
+
+            <section id="auth-screen" class="screen active">
                 <div id="login-view">
                     <h2>Вход в игру</h2>
                     <form class="auth-form" id="login-form">
-                        <input type="text" id="login-username" placeholder="Имя пользователя" required>
-                        <input type="password" id="login-password" placeholder="Пароль" required>
+                        <label for="login-username" class="sr-only">Имя пользователя</label>
+                        <input type="text" id="login-username" placeholder="Имя пользователя" required autocomplete="username">
+                        
+                        <label for="login-password" class="sr-only">Пароль</label>
+                        <input type="password" id="login-password" placeholder="Пароль" required autocomplete="current-password">
+                        
                         <button type="submit" id="login-btn" class="btn btn-primary">Войти</button>
                     </form>
                     <div class="auth-toggle">
@@ -58,89 +56,88 @@
                 <div id="register-view" class="hidden">
                     <h2>Регистрация</h2>
                     <form class="auth-form" id="register-form">
-                        <input type="text" id="register-username" placeholder="Имя пользователя" required>
-                        <input type="password" id="register-password" placeholder="Пароль" required>
+                        <label for="register-username" class="sr-only">Имя пользователя</label>
+                        <input type="text" id="register-username" placeholder="Имя пользователя" required autocomplete="username">
+
+                        <label for="register-password" class="sr-only">Пароль</label>
+                        <input type="password" id="register-password" placeholder="Пароль" required autocomplete="new-password">
+                        
                         <button type="submit" id="register-btn" class="btn btn-primary">Создать аккаунт</button>
                     </form>
                     <div class="auth-toggle">
                         <p class="auth-prompt">Уже есть аккаунт? <a href="#" id="show-login-link" class="auth-link">Войти</a></p>
                     </div>
                 </div>
+                <div id="auth-error" class="error-message" aria-live="polite"></div>
+            </section>
 
-                <div id="auth-error" class="error-message"></div>
-            </div>
-
-            <div id="settings-screen" class="screen">
+            <section id="settings-screen" class="screen">
                 <h2>Настройки игры</h2>
-                <div class="settings-grid">
-                    <div class="setting-item daily-challenge-toggle">
-                        <input type="checkbox" id="daily-challenge-check">
-                        <label for="daily-challenge-check" class="daily-label">
-                            <i class="fas fa-calendar-day"></i>
-                            <span>Ежедневный челлендж</span>
-                        </label>
+                <div class="setting-item daily-challenge-toggle">
+                    <input type="checkbox" id="daily-challenge-check">
+                    <label for="daily-challenge-check" class="daily-label">
+                        <i class="fas fa-calendar-day"></i>
+                        <span>Ежедневный челлендж</span>
+                    </label>
+                </div>
+                
+                <div id="regular-settings">
+                    <div class="mode-selector">
+                        <div class="mode-option">
+                            <input type="radio" id="mode-numbers" name="game-mode" value="INTS" checked>
+                            <label for="mode-numbers" class="mode-label"><i class="fas fa-sort-numeric-up"></i><span>Числа</span></label>
+                        </div>
+                        <div class="mode-option">
+                            <input type="radio" id="mode-image" name="game-mode" value="IMAGE">
+                            <label for="mode-image" class="mode-label"><i class="fas fa-image"></i><span>Картинка</span></label>
+                        </div>
                     </div>
-                    <div id="regular-settings">
-                        <div class="setting-item">
-                            <div class="mode-selector">
-                                <div class="mode-option">
-                                    <input type="radio" id="mode-numbers" name="game-mode" value="INTS" checked>
-                                    <label for="mode-numbers" class="mode-label"><i class="fas fa-sort-numeric-up"></i><span>Числа</span></label>
-                                </div>
-                                <div class="mode-option">
-                                    <input type="radio" id="mode-image" name="game-mode" value="IMAGE">
-                                    <label for="mode-image" class="mode-label"><i class="fas fa-image"></i><span>Картинка</span></label>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="image-selection" class="hidden">
-                            <div class="form-group">
-                                <label>Стандартные картинки</label>
-                                <div id="default-image-previews" class="image-previews">
-                                    </div>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label>Ваши картинки</label>
-                                <div id="user-image-previews" class="image-previews">
-                                    </div>
-                            </div>
 
-                            <label for="image-upload" class="btn btn-secondary"><i class="fas fa-upload"></i> Загрузить свою</g>
-                            <input type="file" id="image-upload" class="hidden" accept="image/png, image/jpeg">
-                            <p id="custom-image-name"></p>
-                        </div>
-                        
+                    <div id="image-selection" class="hidden">
                         <div class="form-group">
-                            <label for="board-size">Размер поля</label>
-                            <div class="custom-select-wrapper">
-                                <select id="board-size">
-                                    <option value="3">3x3</option>
-                                    <option value="4" selected>4x4</option>
-                                    <option value="5">5x5</option>
-                                    <option value="6">6x6</option>
-                                </select>
-                            </div>
+                            <label>Стандартные картинки</label>
+                            <div id="default-image-previews" class="image-previews"></div>
                         </div>
                         <div class="form-group">
-                            <label for="difficulty">Сложность</label>
-                            <div class="custom-select-wrapper">
-                                <select id="difficulty">
-                                    <option value="50">Легко</option>
-                                    <option value="200" selected>Нормально</option>
-                                    <option value="1000">Сложно</option>
-                                </select>
-                            </div>
+                            <label>Ваши картинки</label>
+                            <div id="user-image-previews" class="image-previews"></div>
+                        </div>
+                        <label for="image-upload" class="btn btn-secondary"><i class="fas fa-upload"></i> Загрузить свою</label>
+                        <input type="file" id="image-upload" class="hidden" accept="image/png, image/jpeg">
+                        <p id="custom-image-name"></p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="board-size">Размер поля</label>
+                        <div class="custom-select-wrapper">
+                            <select id="board-size">
+                                <option value="3">3x3</option>
+                                <option value="4" selected>4x4</option>
+                                <option value="5">5x5</option>
+                                <option value="6">6x6</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="difficulty">Сложность</label>
+                        <div class="custom-select-wrapper">
+                            <select id="difficulty">
+                                <option value="30">Легко</option>
+                                <option value="60" selected>Нормально</option>
+                                <option value="80">Сложно</option>
+                            </select>
                         </div>
                     </div>
                 </div>
                 <button id="start-btn" class="btn btn-primary btn-large"><i class="fas fa-rocket"></i> Начать игру</button>
-            </div>
+            </section>
 
-            <div id="game-screen" class="screen">
+            <section id="game-screen" class="screen">
                 <div id="active-game-view">
                     <div class="info-panel">
                         <div><i class="fas fa-shoe-prints"></i> Ходы: <span id="moves-counter">0</span></div>
+                        <div><i class="fas fa-tasks"></i>Прогресс:<span id="progress-counter">0%</span></div>
                         <div><i class="fas fa-hourglass-half"></i> Осталось: <span id="timer">00:00</span></div>
                     </div>
                     <div id="game-board-container">
@@ -149,25 +146,25 @@
                     <div id="game-controls" class="controls">
                         <button id="hint-btn" class="btn btn-secondary"><i class="fas fa-lightbulb"></i> Подсказка (H)</button>
                         <button id="undo-btn" class="btn btn-secondary"><i class="fas fa-undo"></i> Отменить (U)</button>
-                        <button id="restart-btn" class="btn btn-secondary"><i class="fas fa-redo"></i> Перезапуск (R)</button>
                         <button id="redo-btn" class="btn btn-secondary"><i class="fas fa-redo"></i> Вернуть (Shift+U)</button>
+                        <button id="restart-btn" class="btn btn-secondary"><i class="fas fa-sync-alt"></i> Перезапуск (R)</button>
                         <button id="abandon-btn" class="btn btn-danger"><i class="fas fa-flag"></i> Сдаться</button>
                     </div>
                 </div>
-
                 <div id="win-overlay" class="hidden">
                     <h2>Победа!</h2>
                     <div id="win-stars" class="stars"></div>
-                    <p>Ваш результат:</p> 
+                    <p>Ваш результат:</p>
                     <p><strong><span id="win-moves"></span> ходов</strong> за <strong><span id="win-time"></span></strong></p>
                     <button id="play-again-btn" class="btn btn-primary"><i class="fas fa-redo"></i> Играть снова</button>
                 </div>
-            </div>
+            </section>
 
-            <div id="leaderboard-screen" class="screen">
+            <section id="leaderboard-screen" class="screen">
                 <h2>Рейтинги</h2>
                 <div class="leaderboard-filters">
                     <div class="custom-select-wrapper">
+                        <label for="filter-size" class="sr-only">Фильтр по размеру</label>
                         <select id="filter-size">
                             <option value="0">Все размеры</option>
                             <option value="3">3x3</option>
@@ -177,22 +174,24 @@
                         </select>
                     </div>
                     <div class="custom-select-wrapper">
+                        <label for="filter-difficulty" class="sr-only">Фильтр по сложности</label>
                         <select id="filter-difficulty">
                             <option value="0">Все сложности</option>
-                            <option value="50">Легко</option>
-                            <option value="200">Нормально</option>
-                            <option value="1000">Сложно</option>
+                            <option value="30">Легко</option>
+                            <option value="60">Нормально</option>
+                            <option value="80">Сложно</option>
                         </select>
                     </div>
                     <button id="apply-filters-btn" class="btn btn-primary"><i class="fas fa-filter"></i> Применить</button>
                 </div>
-                <div id="leaderboard-tables">
-                    </div>
-            </div>
-            <div id="history-screen" class="screen">
+                <div id="leaderboard-tables"></div>
+            </section>
+
+            <section id="history-screen" class="screen">
                 <h2>История игр</h2>
-                <div id="history-table-container">
-            </div>
+                <div id="history-table-container"></div>
+            </section>
+        
         </main>
     </div>
 

@@ -7,6 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
         totalSeconds: 0,
         gameMode: 'INTS',
         imageUrl: null,
+        imageId: null,
+        isUploadingForGameStart: false,
         isDaily: false,
         currentBoardState: [],
         boardSize: 0,
@@ -69,7 +71,8 @@ document.addEventListener('DOMContentLoaded', () => {
         statsStars: document.getElementById('stats-stars'),
         statsBestTime: document.getElementById('stats-best-time'),
         statsBestMoves: document.getElementById('stats-best-moves'),
-        restartBtn: document.getElementById('restart-btn')
+        restartBtn: document.getElementById('restart-btn'),
+        progressCounter: document.getElementById('progress-counter')
     };
 
     // === API Module: Simplified with a single action endpoint ===
@@ -89,11 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (DOMElements.authScreen.classList.contains('active')) { DOMElements.authError.textContent = error.message; } else { alert(`An error occurred: ${error.message}`); }
             }
         },
-        performAction: (action, params = {}) => api.call('/api/action', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action, params }),
-        }),
+        performAction: (action, params = {}) => api.call('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, params }), }),
         register: (username, passwordHash) => api.call('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, passwordHash }) }),
         login: (username, passwordHash) => api.call('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, passwordHash }) }),
         logout: () => api.call('/api/auth/logout', { method: 'POST' }),
@@ -104,18 +103,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // === Auth Module: Handles login, registration, etc. ===
     const auth = {
         hashPassword: (password) => CryptoJS.SHA256(password).toString(CryptoJS.enc.Hex).toUpperCase(),
-        handleLogin: async (event) => { event.preventDefault(); const username = document.getElementById('login-username').value.trim(); const password = document.getElementById('login-password').value; if (!username || !password) return; const response = await api.login(username, auth.hashPassword(password)); if (response && response.success) auth.onLoginSuccess(response.user); },
-        handleRegister: async (event) => { event.preventDefault(); const username = document.getElementById('register-username').value.trim(); const password = document.getElementById('register-password').value; if (!username || !password) return; const response = await api.register(username, auth.hashPassword(password)); if (response && response.success) auth.onLoginSuccess(response.user); },
-        handleLogout: async () => { await api.logout(); state.currentUser = null; ui.updateLoginState(); if (DOMElements.userStatsPanel) DOMElements.userStatsPanel.classList.add('hidden'); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); },
-        onLoginSuccess: (userData) => {
-            state.currentUser = userData;
-            ui.loadImages();
-            ui.renderUserStats();
-            ui.updateLoginState();
-            ui.showScreen('settings');
-            DOMElements.authError.textContent = '';
-            document.querySelectorAll('#auth-screen form').forEach(f => f.reset());
-        },
+        validateUsername: (username) => { if (username.length === 0) { return { isValid: false, message: 'Имя пользователя не может быть пустым' }; } if (username.length > 50 || username.length < 3) { return { isValid: false, message: 'Имя пользователя должно содержать от 3 до 50 символов' }; } const validUsernameRegex = /^[a-zA-Z0-9_-]+$/; if (!validUsernameRegex.test(username)) { return {  isValid: false, message: 'Имя пользователя может содержать только латинские буквы, цифры, знаки "-" и "_"'  }; } return { isValid: true, message: '' }; },
+        showError: (message) => { DOMElements.authError.textContent = message; DOMElements.authError.classList.add('show');  document.querySelectorAll('#auth-screen input').forEach(input => { input.classList.add('error');}); setTimeout(() => { auth.hideError(); }, 5000); },
+        hideError: () => { DOMElements.authError.classList.remove('show'); document.querySelectorAll('#auth-screen input').forEach(input => { input.classList.remove('error'); }); },
+        clearForms: () => { document.querySelectorAll('#auth-screen form').forEach(form => form.reset()); auth.hideError(); },
+        handleLogin: async (event) => { event.preventDefault(); auth.hideError(); const username = document.getElementById('login-username').value.trim(); const password = document.getElementById('login-password').value; if (!username || !password) { auth.showError('Пожалуйста, заполните все поля'); return; } const loginBtn = document.getElementById('login-btn'); const originalText = loginBtn.innerHTML; loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Вход...'; loginBtn.disabled = true; try { const response = await api.login(username, auth.hashPassword(password)); if (response && response.success) { auth.onLoginSuccess(response.user); } else { auth.showError(response?.message || 'Неверное имя пользователя или пароль'); } } catch (error) { auth.showError('Ошибка соединения. Попробуйте позже.'); } finally { loginBtn.innerHTML = originalText; loginBtn.disabled = false; } },
+        handleRegister: async (event) => { event.preventDefault(); auth.hideError(); const username = document.getElementById('register-username').value.trim(); const password = document.getElementById('register-password').value; const usernameValidation = auth.validateUsername(username); if (!usernameValidation.isValid) { auth.showError(usernameValidation.message); return; } if (!password) { auth.showError('Пожалуйста, введите пароль'); return; } if (password.length < 8) { auth.showError('Пароль должен содержать минимум 8 символов'); return; } const registerBtn = document.getElementById('register-btn'); const originalText = registerBtn.innerHTML; registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Регистрация...'; registerBtn.disabled = true; try { const response = await api.register(username, auth.hashPassword(password)); if (response && response.success) { auth.onLoginSuccess(response.user); } else { auth.showError(response?.message || 'Ошибка регистрации. Возможно, имя пользователя уже занято.'); } } catch (error) { auth.showError('Ошибка соединения. Попробуйте позже.'); } finally { registerBtn.innerHTML = originalText; registerBtn.disabled = false; } },
+        handleLogout: async () => { await api.logout(); state.currentUser = null; ui.updateLoginState(); if (DOMElements.userStatsPanel) DOMElements.userStatsPanel.classList.add('hidden'); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); auth.clearForms(); },
+        onLoginSuccess: async (userData) => { state.currentUser = userData; ui.loadImages(); await ui.renderUserStats(); await ui.updateLoginState(); ui.showScreen('settings'); auth.hideError(); auth.clearForms(); },
         checkStatus: async () => { const response = await api.getStatus(); if (response && response.isLoggedIn) { auth.onLoginSuccess(response.user); } else { ui.showScreen('auth'); } }
     };
 
@@ -123,8 +118,51 @@ document.addEventListener('DOMContentLoaded', () => {
     const game = {
         start: async (forceNew = false, replayGameId = null) => {
             const size = parseInt(DOMElements.boardSizeSelect.value, 10);
-            const settings = { isDailyChallenge: state.isDaily, gameMode: state.gameMode, imageUrl: state.imageUrl, size: size, difficulty: parseInt(DOMElements.difficultySelect.value, 10), forceNew: forceNew, replayGameId: replayGameId };
+            const settings = {
+                isDailyChallenge: state.isDaily,
+                gameMode: state.gameMode,
+                imageId: state.imageId,
+                size: size,
+                difficulty: parseInt(DOMElements.difficultySelect.value, 10),
+                forceNew: forceNew,
+                replayGameId: replayGameId
+            };
+            
             const gameState = await api.performAction('start', settings);
+
+            if (gameState && gameState.imageMissing) {
+                const choiceStandard = confirm("Картинка для этой игры была удалена. Хотите выбрать стандартную картинку?");
+
+                if (choiceStandard) {
+                    // Пользователь согласился
+                    const randomImageId = Math.floor(Math.random() * 3) + 1;
+                    state.imageId = randomImageId;
+                    state.gameMode = 'IMAGE';
+                    game.start(true, null);
+                } else {
+                    // 2. Второе предложение: загрузить свою.
+                    const choiceUpload = confirm("Хотите загрузить новую картинку?");
+                    if (choiceUpload) {
+                        // Пользователь согласился
+                        state.isUploadingForGameStart = true;
+                        DOMElements.imageUpload.click();
+                    } else {
+                        // 3. Третье предложение: сыграть с числами.
+                        const choiceNumbers = confirm("Тогда продолжить с числами?");
+                        if (choiceNumbers) {
+                            // Пользователь согласился
+                            state.imageId = null;
+                            state.gameMode = 'INTS';
+                            game.start(true, null);
+                        } else {
+                            // Пользователь от всего отказался, возвращаем на экран настроек.
+                            ui.showScreen('settings');
+                        }
+                    }
+                }
+                return;
+            }
+
             if (gameState && gameState.active_session_found && !replayGameId) {
                 if (confirm('У вас есть незаконченная игра. Хотите продолжить?')) {
                     ui.showScreen('game');
@@ -135,6 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 return;
             }
+
             if (gameState && gameState.sessionId) {
                 ui.showScreen('game');
                 ui.render(gameState);
@@ -145,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
         undo: async () => { const gameState = await api.performAction('undo'); if (gameState) ui.render(gameState); },
         redo: async () => { const gameState = await api.performAction('redo'); if (gameState) ui.render(gameState); },
         abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.showScreen('settings'); },
-        playAgain: () => { timer.stop(); ui.showScreen('settings'); },
+        playAgain: () => { timer.stop(); ui.showScreen('settings'); (() => { ui.refreshUserData(); }, 500);},
         hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
         timeout: async () => { await api.performAction('timeout'); timer.stop(); ui.showScreen('settings'); },
         restart: async () => { const gameState = await api.performAction('restart'); if (gameState) { timer.stop(); ui.render(gameState); timer.start(gameState.startTime, state.boardSize); } },
@@ -160,39 +199,31 @@ document.addEventListener('DOMContentLoaded', () => {
             return `${minutes}:${seconds}`;
         },
         
-        // --- ИСПРАВЛЕНО: Добавлена проверка на существование панели статистики ---
         renderUserStats: async () => {
-            // Убедимся, что панель есть на странице, прежде чем что-то делать
-            if (!DOMElements.userStatsPanel) {
-                return;
-            }
-            const stats = await api.performAction('get_user_stats');
-            if (stats) {
-                DOMElements.statsUsername.textContent = stats.username;
-                DOMElements.statsStars.textContent = `${stats.total_stars} ★`;
-                DOMElements.statsBestTime.textContent = ui.formatTime(stats.best_time);
-                DOMElements.statsBestMoves.textContent = stats.best_moves > 0 ? stats.best_moves : '—';
-                DOMElements.userStatsPanel.classList.remove('hidden');
-            }
+            return ui.refreshUserData();
         },
+
         loadImages: async () => {
             DOMElements.defaultImagePreviews.innerHTML = '';
             DOMElements.userImagePreviews.innerHTML = '';
 
             const defaultImages = await api.performAction('get_default_images');
             if (defaultImages && defaultImages.length > 0) {
+                DOMElements.defaultImagePreviews.innerHTML = '';
                 defaultImages.forEach(imgData => {
-                    const img = ui.createPreviewImage(`/api/image/${imgData.id}`, imgData.name);
+                    const path = `/api/image/${imgData.id}`;
+                    const img = ui.createPreviewImage(path, imgData.name, imgData.id);
                     DOMElements.defaultImagePreviews.appendChild(img);
                 });
             }
 
             const userImages = await api.performAction('get_user_images');
-
             if (userImages && userImages.length > 0) {
+                DOMElements.userImagePreviews.innerHTML = '';
                 userImages.forEach(imgData => {
+                    const path = `/static${imgData.path}`;
                     const altText = `User image ${imgData.id}`;
-                    const imgContainer = ui.createUserPreviewImage(imgData.id, altText);
+                    const imgContainer = ui.createUserPreviewImage(imgData.id, path, altText);
                     DOMElements.userImagePreviews.appendChild(imgContainer);
                 });
             } else {
@@ -210,20 +241,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         },
-        createPreviewImage: (path, alt) => {
+        createPreviewImage: (path, alt, id = null) => {
             const img = document.createElement('img');
             img.src = path;
             img.alt = alt;
             img.className = 'preview-img';
             img.dataset.src = path;
+            if (id) {
+                img.dataset.imageId = id;
+            }
             img.addEventListener('click', ui.handlePreviewClick);
             return img;
         },
-        createUserPreviewImage: (id, alt) => {
+        createUserPreviewImage: (id, path, alt) => {
             const container = document.createElement('div');
             container.className = 'preview-container';
 
-            const img = ui.createPreviewImage(`/api/image/${id}`, alt);
+            const img = ui.createPreviewImage(path, alt, id);
             container.appendChild(img);
 
             const deleteBtn = document.createElement('button');
@@ -235,9 +269,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return container;
         },
         handlePreviewClick: (event) => {
+            state.gameMode = 'IMAGE';
+            document.getElementById('mode-image').checked = true;
+            DOMElements.imageSelection.classList.remove('hidden');
             document.querySelectorAll('.preview-img').forEach(i => i.classList.remove('selected'));
             event.target.classList.add('selected');
             state.imageUrl = event.target.dataset.src;
+            state.imageId = event.target.dataset.imageId;
             DOMElements.customImageName.textContent = '';
             DOMElements.imageUpload.value = '';
         },
@@ -267,35 +305,71 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const res = await api.uploadImage(formData);
             
-            if (res && res.success) {
-                if (res.status === 'uploaded') {
+        if (res && res.success) {
+            if (res.status === 'uploaded') {
+                if (state.isUploadingForGameStart) {
+                    state.isUploadingForGameStart = false;
+                    state.imageId = res.newImage.id;
+                    state.gameMode = 'IMAGE';
+                    game.start(true, null);
+                } else {
                     DOMElements.customImageName.textContent = `Загружено: ${file.name}`;
                     ui.loadImages();
-                } else if (res.status === 'duplicate') {
-                    DOMElements.customImageName.textContent = 'Такая картинка уже есть.';
                 }
-            } else {
-                const errorMessage = res && res.error ? res.error : 'Ошибка загрузки.';
-                DOMElements.customImageName.textContent = errorMessage;
+            } else if (res.status === 'duplicate') {
+                DOMElements.customImageName.textContent = 'Такая картинка уже есть.';
+                if(state.isUploadingForGameStart) state.isUploadingForGameStart = false;
             }
+        } else {
+            const errorMessage = res && res.error ? res.error : 'Ошибка загрузки.';
+            DOMElements.customImageName.textContent = errorMessage;
+        }
 
             event.target.value = '';
         },
+
         showScreen: (screenName) => {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            const screen = document.getElementById(`${screenName}-screen`); if(screen) screen.classList.add('active');
-            if (state.currentUser) { DOMElements.navButtons.forEach(btn => { btn.classList.toggle('active', btn.dataset.screen === screenName); }); }
-            if (screenName === 'leaderboard') { ui.renderLeaderboards(); }
-            if (screenName === 'history') { ui.renderGameHistory(); }
+            const screen = document.getElementById(`${screenName}-screen`); 
+            if(screen) screen.classList.add('active');
+            
+            if (state.currentUser) { 
+                DOMElements.navButtons.forEach(btn => { 
+                    btn.classList.toggle('active', btn.dataset.screen === screenName); 
+                }); 
+            }
+            
+            if (screenName === 'leaderboard') { 
+                ui.renderLeaderboards(); 
+            }
+            if (screenName === 'history') { 
+                ui.renderGameHistory(); 
+            }
+            if (screenName === 'settings') { 
+                setTimeout(() => {
+                    ui.refreshUserData();
+                }, 100);
+            }
         },
-        updateLoginState: () => { const isLoggedIn = !!state.currentUser; DOMElements.userStatus.classList.toggle('hidden', !isLoggedIn); DOMElements.navMenu.classList.toggle('hidden', !isLoggedIn); if (isLoggedIn) { DOMElements.welcomeMessage.textContent = `Добро пожаловать, ${state.currentUser.name}!`; } },
+
+        updateLoginState: async () => { 
+            const isLoggedIn = !!state.currentUser; 
+            DOMElements.userStatus.classList.toggle('hidden', !isLoggedIn); 
+            DOMElements.navMenu.classList.toggle('hidden', !isLoggedIn); 
+            
+            if (isLoggedIn) { 
+                await ui.refreshUserData();
+            } 
+        },
+
         render: (gameState) => {
-            const { boardSize, boardState, moves, status, imageUrl, gameMode, stars } = gameState;
+            const { boardSize, boardState, moves, status, imageUrl, gameMode, stars, progress } = gameState;
             state.gameMode = gameMode;
             state.imageUrl = imageUrl;
             state.currentBoardState = boardState;
             state.boardSize = boardSize;
             DOMElements.movesCounter.textContent = moves;
+            
             if (status === 'SOLVED') {
                 timer.stop();
                 DOMElements.winMoves.textContent = moves;
@@ -304,27 +378,44 @@ document.addEventListener('DOMContentLoaded', () => {
                 DOMElements.winStars.innerHTML = (stars > 0) ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : 'Решено';
                 DOMElements.activeGameView.classList.add('hidden');
                 DOMElements.winOverlay.classList.remove('hidden');
-                ui.renderUserStats();
+                
+                ui.renderUserStats().then(() => {
+                    ui.updateLoginState();
+                });
             } else {
+                if (DOMElements.progressCounter && progress !== undefined) {
+                    DOMElements.progressCounter.textContent = `${progress}%`;
+                }
                 DOMElements.activeGameView.classList.remove('hidden');
                 DOMElements.winOverlay.classList.add('hidden');
                 document.documentElement.style.setProperty('--board-size', boardSize);
                 DOMElements.gameBoard.innerHTML = '';
+                
                 boardState.forEach(value => {
-                    const tile = document.createElement('div'); tile.classList.add('tile');
-                    if (value === 0) { tile.classList.add('empty'); } 
-                    else {
+                    const tile = document.createElement('div'); 
+                    tile.classList.add('tile');
+                    if (value === 0) { 
+                        tile.classList.add('empty'); 
+                    } else {
                         tile.dataset.value = value;
                         if (gameMode === 'IMAGE' && imageUrl) {
-                            const col = (value - 1) % boardSize; const row = Math.floor((value - 1) / boardSize);
-                            tile.style.backgroundImage = `url(${imageUrl})`;
+                            let finalImageUrl = imageUrl;
+                            if (imageUrl.startsWith('/uploads/')) {
+                                finalImageUrl = `/static${imageUrl}`;
+                            }
+                            const col = (value - 1) % boardSize;
+                            const row = Math.floor((value - 1) / boardSize);
+                            tile.style.backgroundImage = `url(${finalImageUrl})`;
                             tile.style.backgroundPosition = `${(col * 100) / (boardSize - 1)}% ${(row * 100) / (boardSize - 1)}%`;
-                        } else { tile.textContent = value; }
+                        } else {
+                            tile.textContent = value;
+                        }
                     }
                     DOMElements.gameBoard.appendChild(tile);
                 });
             }
         },
+
         renderLeaderboards: async () => {
             const size = DOMElements.filterSize.value;
             const difficulty = DOMElements.filterDifficulty.value;
@@ -353,13 +444,37 @@ document.addEventListener('DOMContentLoaded', () => {
             const columns = ['user', 'total_stars', 'solved_games', 'unfinished_games'];
             DOMElements.leaderboardTables.appendChild(createTable('Топ игроков', headers, data.leaderboard, columns));
         },
+
+        refreshUserData: async () => {
+            if (!state.currentUser) return;
+            
+            try {
+                const stats = await api.performAction('get_user_stats');
+                if (stats) {
+
+                    if (DOMElements.userStatsPanel) {
+                        DOMElements.statsUsername.textContent = stats.username;
+                        DOMElements.statsStars.textContent = `${stats.total_stars} ★`;
+                        DOMElements.statsBestTime.textContent = ui.formatTime(stats.best_time);
+                        DOMElements.statsBestMoves.textContent = stats.best_moves > 0 ? stats.best_moves : '—';
+                        DOMElements.userStatsPanel.classList.remove('hidden');
+                    }
+
+                    state.currentUser.total_stars = stats.total_stars;
+                    DOMElements.welcomeMessage.innerHTML = `Добро пожаловать, ${state.currentUser.name} <span class="user-stars">${stats.total_stars} ★</span>`;
+                }
+            } catch (error) {
+                console.error('Error refreshing user data:', error);
+            }
+        },
+
         renderGameHistory: async () => {
             const historyData = await api.performAction('get_game_history');
             const container = DOMElements.historyTableContainer;
             container.innerHTML = ''; 
 
             if (!historyData || historyData.length === 0) {
-                container.innerHTML = '<p>Вы еще не сыграли ни одной игры.</p>';
+                container.innerHTML = '<p><i>Вы еще не сыграли ни одной игры</i></p>';
                 return;
             }
 
