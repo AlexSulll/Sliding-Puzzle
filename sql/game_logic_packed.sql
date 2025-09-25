@@ -1,39 +1,31 @@
--- =============================================================================
--- Файл: game_logic_packed.sql
--- Версия: 4.0 (Адаптировано под новую схему БД)
--- Описание: Полный пакет для управления игровой логикой "Пятнашек".
--- =============================================================================
-
--- 1. СПЕЦИФИКАЦИЯ ПАКЕТА
 CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
-
-    ----------------------------------------------------------------------------
-    -- ОБЩИЕ ТИПЫ ДАННЫХ
-    ----------------------------------------------------------------------------
     TYPE t_board IS TABLE OF NUMBER INDEX BY PLS_INTEGER;
+    
     TYPE t_node IS RECORD (
         board_state t_board,
         g_cost      NUMBER,
         h_cost      NUMBER
     );
+    
     TYPE t_path IS TABLE OF t_node INDEX BY PLS_INTEGER;
 
-    ----------------------------------------------------------------------------
-    -- API: БЛОК АВТОРИЗАЦИИ
-    ----------------------------------------------------------------------------
-    FUNCTION register_user(p_username IN VARCHAR2, p_password_hash IN VARCHAR2) RETURN CLOB;
-    FUNCTION login_user(p_username IN VARCHAR2, p_password_hash IN VARCHAR2) RETURN CLOB;
+    FUNCTION register_user (
+        p_username IN VARCHAR2, 
+        p_password_hash IN VARCHAR2
+    ) RETURN CLOB;
+    
+    FUNCTION login_user (
+        p_username IN VARCHAR2, 
+        p_password_hash IN VARCHAR2
+    ) RETURN CLOB;
 
-    ----------------------------------------------------------------------------
-    -- API: БЛОК УПРАВЛЕНИЯ ИГРОЙ И СЕССИЯМИ
-    ----------------------------------------------------------------------------
     PROCEDURE cleanup_expired_games;
 
-    FUNCTION check_active_session(
+    FUNCTION check_active_session (
         p_user_id IN USERS.USER_ID%TYPE
     ) RETURN CLOB;
 
-    FUNCTION start_new_game(
+    FUNCTION start_new_game (
         p_user_id           IN USERS.USER_ID%TYPE,
         p_board_size        IN NUMBER,
         p_shuffle_moves     IN NUMBER,
@@ -69,9 +61,6 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_session_id IN GAMES.GAME_ID%TYPE
     ) RETURN CLOB;
 
-    ----------------------------------------------------------------------------
-    -- API: БЛОК ПОДСКАЗОК, РЕЙТИНГОВ И ИЗОБРАЖЕНИЙ
-    ----------------------------------------------------------------------------
     FUNCTION get_hint(
         p_session_id IN GAMES.GAME_ID%TYPE
     ) RETURN VARCHAR2;
@@ -115,31 +104,68 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_image_id IN USER_IMAGES.IMAGE_ID%TYPE
     ) RETURN VARCHAR2;
     
-    ----------------------------------------------------------------------------
-    -- API: БЛОК ДЛЯ ПЛАНИРОВЩИКА
-    ----------------------------------------------------------------------------
     PROCEDURE create_daily_challenge;
     
     FUNCTION get_user_stats(
         p_user_id IN USERS.USER_ID%TYPE
     ) RETURN CLOB;
 
-    FUNCTION get_target_state(p_size IN NUMBER) RETURN VARCHAR2;
-    FUNCTION shuffle_board(p_target_state IN VARCHAR2, p_shuffles IN NUMBER, p_size IN NUMBER) RETURN VARCHAR2;
-    FUNCTION state_to_table(p_state IN VARCHAR2) RETURN GAME_MANAGER_PKG.t_board;
-    FUNCTION table_to_state(p_table IN GAME_MANAGER_PKG.t_board) RETURN VARCHAR2;
-    FUNCTION get_game_state_json(p_game_id IN NUMBER) RETURN CLOB;
-    FUNCTION calculate_heuristic(p_board GAME_MANAGER_PKG.t_board) RETURN NUMBER;
-    PROCEDURE init_target_positions(p_target_board GAME_MANAGER_PKG.t_board, p_size NUMBER);
-    FUNCTION is_state_in_path(p_path GAME_MANAGER_PKG.t_path, p_board GAME_MANAGER_PKG.t_board) RETURN BOOLEAN;
-    FUNCTION search(p_path IN OUT NOCOPY GAME_MANAGER_PKG.t_path, p_g_cost IN NUMBER, p_threshold IN NUMBER, o_solution OUT NOCOPY GAME_MANAGER_PKG.t_path) RETURN NUMBER;
-    FUNCTION calculate_optimal_path_length(p_board_state IN VARCHAR2, p_board_size_param IN NUMBER) RETURN NUMBER;
-    FUNCTION get_next_best_move(p_board_state IN VARCHAR2, p_target_board_state IN VARCHAR2, p_board_size_param IN NUMBER) RETURN NUMBER;
+    FUNCTION get_target_state (
+        p_size IN NUMBER
+    ) RETURN VARCHAR2;
+
+    FUNCTION shuffle_board (
+        p_target_state IN VARCHAR2, 
+        p_shuffles IN NUMBER, 
+        p_size IN NUMBER
+    ) RETURN VARCHAR2;
+
+    FUNCTION state_to_table (
+        p_state IN VARCHAR2
+    ) RETURN GAME_MANAGER_PKG.t_board;
+
+    FUNCTION table_to_state (
+        p_table IN GAME_MANAGER_PKG.t_board
+    ) RETURN VARCHAR2;
+
+    FUNCTION get_game_state_json (
+        p_game_id IN NUMBER
+    ) RETURN CLOB;
+
+    FUNCTION calculate_heuristic (
+        p_board GAME_MANAGER_PKG.t_board
+    ) RETURN NUMBER;
+
+    PROCEDURE init_target_positions (
+        p_target_board GAME_MANAGER_PKG.t_board, 
+        p_size NUMBER
+    );
+
+    FUNCTION is_state_in_path (
+        p_path GAME_MANAGER_PKG.t_path, 
+        p_board GAME_MANAGER_PKG.t_board
+    ) RETURN BOOLEAN;
+
+    FUNCTION search (
+        p_path IN OUT NOCOPY GAME_MANAGER_PKG.t_path, p_g_cost IN NUMBER, 
+        p_threshold IN NUMBER, 
+        o_solution OUT NOCOPY GAME_MANAGER_PKG.t_path
+    ) RETURN NUMBER;
+
+    FUNCTION calculate_optimal_path_length (
+        p_board_state IN VARCHAR2, 
+        p_board_size_param IN NUMBER
+    ) RETURN NUMBER;
+
+    FUNCTION get_next_best_move (
+        p_board_state IN VARCHAR2, 
+        p_target_board_state IN VARCHAR2, 
+        p_board_size_param IN NUMBER
+    ) RETURN NUMBER;
 
 END GAME_MANAGER_PKG;
 /
 
--- 2. ТЕЛО ПАКЕТА
 CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     ----------------------------------------------------------------------------
     -- ПРИВАТНЫЕ УТИЛИТЫ И ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
@@ -220,7 +246,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         ) LOOP
             IF rec.EXPIRATION_TIME < SYSDATE THEN
                 UPDATE GAMES
-                SET STATUS = 'ABANDONED', COMPLETED_AT = rec.EXPIRATION_TIME, CURRENT_MOVE_ORDER = NULL
+                SET STATUS = 'TIMEOUT', CURRENT_MOVE_ORDER = NULL
                 WHERE GAME_ID = rec.GAME_ID;
 
                 DELETE FROM MOVE_HISTORY WHERE GAME_ID = rec.GAME_ID;
@@ -279,7 +305,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         -- Очистка предыдущей активной сессии, если она была
         FOR rec IN (SELECT GAME_ID FROM GAMES WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE') LOOP
             DELETE FROM MOVE_HISTORY WHERE GAME_ID = rec.GAME_ID;
-            DELETE FROM GAMES WHERE GAME_ID = rec.GAME_ID;
+            UPDATE GAMES SET STATUS = 'ABANDONED', COMPLETED_AT = SYSDATE, CURRENT_MOVE_ORDER = null WHERE GAME_ID = rec.GAME_ID;
         END LOOP;
         
         IF p_replay_game_id IS NOT NULL THEN
@@ -296,7 +322,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 l_challenge_id      := l_original_game.CHALLENGE_ID;
                 l_optimal_moves     := l_original_game.OPTIMAL_MOVES;
             END;
-        ELSIF p_is_daily_challenge THEN
+        ELSE IF p_is_daily_challenge THEN
             -- Логика ежедневного челленджа
             DECLARE 
                 l_daily DAILY_CHALLENGES%ROWTYPE; 
@@ -366,8 +392,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
         UPDATE GAMES
         SET STATUS = 'TIMEOUT',
-            COMPLETED_AT = l_game.START_TIME + (CEIL(10 * (l_game.BOARD_SIZE / 4)) / (24 * 60)),
-            STARS_EARNED = 0,
+            COMPLETED_AT = NULL,
             CURRENT_MOVE_ORDER = NULL
         WHERE GAME_ID = p_session_id;
 
