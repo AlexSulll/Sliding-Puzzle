@@ -322,7 +322,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 l_challenge_id      := l_original_game.CHALLENGE_ID;
                 l_optimal_moves     := l_original_game.OPTIMAL_MOVES;
             END;
-        ELSE IF p_is_daily_challenge THEN
+        ELSIF p_is_daily_challenge THEN
             -- Логика ежедневного челленджа
             DECLARE 
                 l_daily DAILY_CHALLENGES%ROWTYPE; 
