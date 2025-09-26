@@ -180,7 +180,7 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 .leaderboard-filters { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; justify-content: center; }
 
 #leaderboard-tables { 
-    max-height: 55vh;
+    max-height: 40vh;
     overflow-y: auto;
     overflow-x: hidden;
     border-radius: 8px;
@@ -286,7 +286,7 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 
 /* --- ЭКРАН ИСТОРИИ ИГР --- */
 #history-table-container {
-    max-height: 62vh;
+    max-height: 52vh;
     overflow-y: auto;
     overflow-x: hidden;
     border-radius: 8px;
