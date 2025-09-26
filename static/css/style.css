@@ -45,15 +45,12 @@ body {
 
 main#app-container {
     padding: 20px;
-    /* padding: 5px 20px 20px 20px; */
 }
 
 h1 { font-size: 2.25rem; color: var(--text-color); margin-top: 10px; margin-bottom: 10px;}
 h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-top: 0px; }
 .screen { display: none; }
 .screen.active { display: block; }
-
-hr { border: 0; border-top: 1px solid var(--border-color); margin: 25px 0; }
 
 /* --- ОБЩИЕ ЭЛЕМЕНТЫ: КНОПКИ И ПОЛЯ --- */
 .btn {
@@ -130,6 +127,7 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: 25px 0; }
     border-radius: 12px;
     font-size: 0.9em;
 }
+
 /* --- ЭКРАН НАСТРОЕК --- */
 .form-group { margin-bottom: 20px; text-align: left; }
 .form-group label { display: block; margin-bottom: 8px; font-weight: 500; color: #4a5568; }
@@ -180,127 +178,72 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: 25px 0; }
 
 /* --- ЭКРАН РЕЙТИНГОВ --- */
 .leaderboard-filters { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; justify-content: center; }
-#leaderboard-tables h3 { margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;}
-#leaderboard-tables table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; }
-#leaderboard-tables th, #leaderboard-tables td { padding: 12px 15px; text-align: left; }
-#leaderboard-tables th { background-color: #f7fafc; font-weight: 600; }
-#leaderboard-tables tr { border-bottom: 1px solid var(--border-color); }
-#leaderboard-tables tr:last-child { border-bottom: none; }
 
-/* --- АДАПТИВНОСТЬ --- */
-@media (max-width: 600px) {
-    :root { --tile-size: 60px; }
-    body { padding: 10px; }
-    .main-container { padding: 0; }
-    main#app-container { padding: 15px; }
-    .mode-label { width: 100px; height: 80px; }
-}
-@media (max-width: 450px) {
-    :root { --tile-size: 50px; }
-    .btn { padding: 10px 16px; font-size: 0.9rem; }
-    .leaderboard-filters { flex-direction: column; align-items: stretch; }
+#leaderboard-tables { 
+    max-height: 55vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-radius: 8px;
+    margin-top: 15px;
 }
 
-/* --- Улучшения для таблицы рейтингов --- */
+#leaderboard-tables h3 { 
+    margin-bottom: 15px; 
+    border-bottom: 1px solid var(--border-color); 
+    padding-bottom: 10px;
+    position: sticky;
+    top: 0;
+    background: var(--container-bg);
+    z-index: 3;
+    padding: 10px 0;
+    margin: 0 0 15px 0;
+}
+
 #leaderboard-tables table {
-    background-color: var(--container-bg); /* Более яркий фон */
-    border: 1px solid var(--primary-color); /* Акцентная рамка */
-    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); /* Более выразительная тень */
-    transition: all 0.3s ease;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    background-color: var(--container-bg);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
 }
 
-#leaderboard-tables table:hover {
-    transform: translateY(-2px); /* Небольшой эффект при наведении */
-    box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.15), 0 12px 12px -5px rgba(0, 0, 0, 0.08);
+#leaderboard-tables thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+#leaderboard-tables th, #leaderboard-tables td { 
+    padding: 12px 15px; 
+    text-align: left; 
+    border-bottom: 1px solid var(--border-color);
 }
 
 #leaderboard-tables th {
-    background-color: var(--primary-color); /* Яркий фон для заголовков */
-    color: white; /* Белый текст на ярком фоне */
-    font-weight: 700; /* Более жирный шрифт */
-    text-transform: uppercase; /* Заголовки в верхнем регистре */
-    letter-spacing: 0.05em; /* Небольшой интервал между буквами */
-    position: sticky; /* Заголовки остаются на месте при прокрутке */
-    top: 0;
-    z-index: 1;
-}
-
-#leaderboard-tables tr {
-    transition: background-color 0.2s ease;
-}
-
-#leaderboard-tables tr:nth-child(even) {
-    background-color: #f7fafc; /* Светлая полоса для четных строк */
-}
-
-#leaderboard-tables tr:hover {
-    background-color: #ebf4ff; /* Мягкое выделение при наведении на строку */
-}
-
-#leaderboard-tables td {
-    color: #4a5568; /* Чуть более темный цвет текста */
-    border-bottom: 1px solid #ebf4ff; /* Более мягкая граница между строками */
+    background-color: #5a67d8;
+    color: white;
+    font-weight: 600;
 }
 
 #leaderboard-tables tr:last-child td {
-    border-bottom: none; /* Убираем нижнюю границу у последней строки */
+    border-bottom: none;
+}
+
+#leaderboard-tables tr:hover {
+    background-color: #f7fafc;
 }
 
 /* Стилизация золотой звездочки */
 .gold-star {
-    color: var(--warning-color); /* Используем переменную для золотого цвета */
-    font-size: 0.9em; /* Чуть меньше основного текста */
-    margin-left: 5px; /* Небольшой отступ от числа */
+    color: var(--warning-color);
+    font-size: 0.9em;
+    margin-left: 5px;
 }
 
 .star-count {
-    font-weight: 600; /* Жирный шрифт для количества звезд */
-    color: var(--primary-color); /* Основной цвет приложения для числа */
-}
-
-/* --- Стилизация выпадающих списков --- */
-.custom-select-wrapper {
-    position: relative;
-    display: block; /* Убедимся, что обертка занимает всю ширину */
-}
-
-/* Иконка-стрелочка */
-.custom-select-wrapper::after {
-    content: '\f078';
-    font-family: 'Font Awesome 6 Free';
-    font-weight: 900;
-    position: absolute;
-    top: 50%;
-    right: 15px;
-    transform: translateY(-50%);
-    pointer-events: none;
-    transition: transform 0.2s ease;
-    color: #a0aec0;
-}
-
-.custom-select-wrapper select {
-    width: 100%;
-    padding: 12px 40px 12px 15px; /* Добавлено больше места справа для стрелки */
-    border-radius: 8px;
-    border: 1px solid var(--border-color);
-    font-size: 1rem;
-    font-weight: 500;
-    color: var(--text-color);
-    appearance: none;
-    -webkit-appearance: none;
-    background-color: white;
-    cursor: pointer;
-    transition: border-color 0.2s, box-shadow 0.2s; /* Плавные переходы */
-}
-
-.custom-select-wrapper select:hover {
-    border-color: #a0aec0; /* Подсветка рамки при наведении */
-}
-
-.custom-select-wrapper select:focus {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.2);
-    outline: none;
+    font-weight: 600;
+    color: var(--primary-color);
 }
 
 .preview-container {
@@ -342,85 +285,86 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: 25px 0; }
 }
 
 /* --- ЭКРАН ИСТОРИИ ИГР --- */
-.no-games-message {
-    text-align: center;
-    font-size: 16px;
-    color: #6c757d; 
-    margin: 40px 0;
-    padding: 0;
-    font-style: italic;
-    background-color: transparent; 
-    border: none; 
-    border-radius: 0; 
-}
-
 #history-table-container {
-    margin-top: 20px;
+    max-height: 62vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-radius: 8px;
+    margin-top: 15px;
 }
 
 .history-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.9rem;
-    box-shadow: var(--shadow);
+    background-color: var(--container-bg);
     border-radius: 8px;
-    overflow: hidden;
+    box-shadow: var(--shadow);
+}
+
+.history-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 2;
 }
 
 .history-table th, .history-table td {
     padding: 12px 15px;
     text-align: left;
-}
-
-.history-table th {
-    background-color: #f7fafc;
-    font-weight: 600;
-}
-
-.history-table tr {
     border-bottom: 1px solid var(--border-color);
 }
 
-.history-table tr:last-child {
+.history-table th {
+    background-color: #5a67d8;
+    color: white;
+    font-weight: 600;
+}
+
+.history-table tr:last-child td {
     border-bottom: none;
 }
 
 .history-table tr:hover {
-    background-color: #ebf4ff;
+    background-color: #f7fafc;
 }
 
 .replay-btn {
-    padding: 6px 12px;
-    font-size: 0.85rem;
+    padding: 6px 4px;
+    font-size: 0.75rem;
 }
 
 .status-solved {
-    color: #f6ad55; /* warning-color */
+    color: #f6ad55;
     font-weight: bold;
 }
 
 .status-abandoned {
-    color: #6c757d; /* secondary-color */
+    color: #6c757d;
+}
+
+.status-timeout {
+    color: #e53e3e;
+    font-weight: bold;
 }
 
 /* --- Стили для панели статистики --- */
 #user-stats-panel {
-    position: fixed; /* Прикрепляем к окну браузера */
+    position: fixed;
     top: 20px;
     left: 20px;
-    width: 260px; /* Задаем фиксированную ширину */
-    background-color: var(--container-bg); /* Используем фон как у основного контейнера */
+    width: 260px;
+    background-color: var(--container-bg);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 15px 20px;
     text-align: left;
-    box-shadow: var(--shadow); /* Используем основную тень */
-    z-index: 1000; /* Размещаем поверх всех элементов */
+    box-shadow: var(--shadow);
+    z-index: 1000;
     transition: transform 0.3s ease;
 }
 
 #user-stats-panel.hidden {
-    transform: translateX(-150%); /* Прячем панель за пределы экрана */
+    transform: translateX(-150%);
 }
 
 #user-stats-panel h3 {
@@ -438,7 +382,7 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: 25px 0; }
     padding: 0;
     margin: 0;
     display: grid;
-    grid-template-columns: 1fr; /* В одну колонку для вертикального вида */
+    grid-template-columns: 1fr;
     gap: 8px;
 }
 
@@ -450,59 +394,78 @@ hr { border: 0; border-top: 1px solid var(--border-color); margin: 25px 0; }
     color: #4a5568;
 }
 
+/* Стилизация скроллбара для таблиц */
+#leaderboard-tables::-webkit-scrollbar,
+#history-table-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+#leaderboard-tables::-webkit-scrollbar-track,
+#history-table-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+#leaderboard-tables::-webkit-scrollbar-thumb,
+#history-table-container::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+#leaderboard-tables::-webkit-scrollbar-thumb:hover,
+#history-table-container::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
 /* Адаптивность для маленьких экранов */
 @media (max-width: 900px) {
     #user-stats-panel {
-        position: static; /* Возвращаем в обычный поток документа */
+        position: static;
         width: auto;
         margin: 20px;
-        transform: none !important; /* Отключаем анимацию скрытия */
+        transform: none !important;
     }
 
     #user-stats-panel.hidden {
-        display: none !important; /* Просто скрываем на мобильных, если не залогинен */
+        display: none !important;
     }
 
-    /* Нужно поправить основной контейнер, чтобы он не прилипал к статистике */
     .main-container {
         margin-top: 0;
     }
 }
 
-.status-timeout {
-    color: #e53e3e; /* danger-color */
-    font-weight: bold;
+@media (max-width: 600px) {
+    :root { --tile-size: 60px; }
+    body { padding: 10px; }
+    .main-container { padding: 0; }
+    main#app-container { padding: 15px; }
+    .mode-label { width: 100px; height: 80px; }
+    
+    #leaderboard-tables th,
+    #leaderboard-tables td,
+    .history-table th,
+    .history-table td {
+        padding: 8px 10px;
+        font-size: 0.8rem;
+    }
 }
 
-/* --- Стили для обновлённой инфо-панели --- */
-
-/* Основной контейнер-флекс для трёх элементов */
-.info-panel {
-    display: flex;
-    justify-content: space-between; /* Распределяет элементы по краям и в центре */
-    align-items: center; /* Выравнивает всё по вертикали */
-    gap: 15px; /* Отступ между элементами */
-    padding: 10px;
-    border-bottom: 1px solid var(--border-color);
-    margin-bottom: 20px;
-}
-
-/* Стили для каждого элемента в панели */
-.info-item {
-    display: flex;
-    flex-direction: column; /* Иконка/текст сверху, значение/бар снизу */
-    align-items: center;
-    gap: 5px;
-    font-size: 0.9rem;
-    color: #6c757d;
-}
-
-.info-item i {
-    font-size: 1.2rem;
-}
-
-.info-item span strong {
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: var(--text-color);
+@media (max-width: 450px) {
+    :root { --tile-size: 50px; }
+    .btn { padding: 10px 16px; font-size: 0.9rem; }
+    .leaderboard-filters { flex-direction: column; align-items: stretch; }
+    
+    #leaderboard-tables th,
+    #leaderboard-tables td,
+    .history-table th,
+    .history-table td {
+        padding: 6px 8px;
+        font-size: 0.75rem;
+    }
+    
+    .replay-btn {
+        padding: 4px 8px;
+        font-size: 0.7rem;
+    }
 }

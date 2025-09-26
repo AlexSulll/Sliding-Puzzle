@@ -420,29 +420,43 @@ document.addEventListener('DOMContentLoaded', () => {
             const size = DOMElements.filterSize.value;
             const difficulty = DOMElements.filterDifficulty.value;
             const data = await api.performAction('get_leaderboards', { size: size, difficulty: difficulty });
-            DOMElements.leaderboardTables.innerHTML = '';
-            if(!data || !data.leaderboard) { DOMElements.leaderboardTables.innerHTML = '<p>Пока нет данных.</p>'; return; }
-            const createTable = (title, headers, rows, columns) => {
-                const container = document.createElement('div');
-                const h3 = document.createElement('h3'); h3.textContent = title; container.appendChild(h3);
-                if(!rows || rows.length === 0) { const p = document.createElement('p'); p.textContent = 'Для выбранных фильтров нет данных.'; container.appendChild(p); return container; }
-                const table = document.createElement('table'); const thead = document.createElement('thead'); const tbody = document.createElement('tbody');
-                thead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
-                rows.forEach(row => { 
-                    const tr = document.createElement('tr'); 
-                    tr.innerHTML = columns.map(col => {
-                        let content = row[col] !== undefined ? row[col] : '';
-                        if (col === 'total_stars') { content = `<span class="star-count">${content}</span> <i class="fas fa-star gold-star"></i>`; }
-                        return `<td>${content}</td>`;
-                    }).join(''); 
-                    tbody.appendChild(tr); 
-                });
-                table.appendChild(thead); table.appendChild(tbody); container.appendChild(table);
-                return container;
-            };
-            const headers = ['Игрок', 'Звёзды', 'Решено', 'Не завершено'];
-            const columns = ['user', 'total_stars', 'solved_games', 'unfinished_games'];
-            DOMElements.leaderboardTables.appendChild(createTable('Топ игроков', headers, data.leaderboard, columns));
+            const container = DOMElements.leaderboardTables;
+            container.innerHTML = '';
+
+            if (!data || !data.leaderboard || data.leaderboard.length === 0) {
+                container.innerHTML = '<p><i>Пока нет данных для выбранных фильтров</i></p>';
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.className = 'leaderboard-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>Место</th>
+                        <th>Игрок</th>
+                        <th>Звёзды</th>
+                        <th>Решено</th>
+                        <th>Не завершено</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            `;
+            const tbody = table.querySelector('tbody');
+
+            data.leaderboard.forEach((player, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td>${player.user}</td>
+                    <td><span class="star-count">${player.total_stars}</span> <i class="fas fa-star gold-star"></i></td>
+                    <td>${player.solved_games}</td>
+                    <td>${player.unfinished_games}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            container.appendChild(table);
         },
 
         refreshUserData: async () => {
