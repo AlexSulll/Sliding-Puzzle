@@ -397,7 +397,7 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 /* Стилизация скроллбара для таблиц */
 #leaderboard-tables::-webkit-scrollbar,
 #history-table-container::-webkit-scrollbar {
-    width: 8px;
+    width: 0px;
 }
 
 #leaderboard-tables::-webkit-scrollbar-track,
