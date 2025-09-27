@@ -92,11 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (DOMElements.authScreen.classList.contains('active')) { DOMElements.authError.textContent = error.message; } else { alert(`An error occurred: ${error.message}`); }
             }
         },
-        performAction: (action, params = {}) => api.call('/api/action', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action, params }),
-        }),
+        performAction: (action, params = {}) => api.call('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, params }), }),
         register: (username, passwordHash) => api.call('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, passwordHash }) }),
         login: (username, passwordHash) => api.call('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, passwordHash }) }),
         logout: () => api.call('/api/auth/logout', { method: 'POST' }),
@@ -107,18 +103,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // === Auth Module: Handles login, registration, etc. ===
     const auth = {
         hashPassword: (password) => CryptoJS.SHA256(password).toString(CryptoJS.enc.Hex).toUpperCase(),
-        handleLogin: async (event) => { event.preventDefault(); const username = document.getElementById('login-username').value.trim(); const password = document.getElementById('login-password').value; if (!username || !password) return; const response = await api.login(username, auth.hashPassword(password)); if (response && response.success) auth.onLoginSuccess(response.user); },
-        handleRegister: async (event) => { event.preventDefault(); const username = document.getElementById('register-username').value.trim(); const password = document.getElementById('register-password').value; if (!username || !password) return; const response = await api.register(username, auth.hashPassword(password)); if (response && response.success) auth.onLoginSuccess(response.user); },
-        handleLogout: async () => { await api.logout(); state.currentUser = null; ui.updateLoginState(); if (DOMElements.userStatsPanel) DOMElements.userStatsPanel.classList.add('hidden'); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); },
-        onLoginSuccess: (userData) => {
-            state.currentUser = userData;
-            ui.loadImages();
-            ui.renderUserStats();
-            ui.updateLoginState();
-            ui.showScreen('settings');
-            DOMElements.authError.textContent = '';
-            document.querySelectorAll('#auth-screen form').forEach(f => f.reset());
-        },
+        validateUsername: (username) => { if (username.length === 0) { return { isValid: false, message: 'Имя пользователя не может быть пустым' }; } if (username.length > 50 || username.length < 3) { return { isValid: false, message: 'Имя пользователя должно содержать от 3 до 50 символов' }; } const validUsernameRegex = /^[a-zA-Z0-9_-]+$/; if (!validUsernameRegex.test(username)) { return {  isValid: false, message: 'Имя пользователя может содержать только латинские буквы, цифры, знаки "-" и "_"'  }; } return { isValid: true, message: '' }; },
+        showError: (message) => { DOMElements.authError.textContent = message; DOMElements.authError.classList.add('show');  document.querySelectorAll('#auth-screen input').forEach(input => { input.classList.add('error');}); setTimeout(() => { auth.hideError(); }, 5000); },
+        hideError: () => { DOMElements.authError.classList.remove('show'); DOMElements.authError.textContent = ''; document.querySelectorAll('#auth-screen input').forEach(input => { input.classList.remove('error'); }); },
+        clearForms: () => { document.querySelectorAll('#auth-screen form').forEach(form => form.reset()); auth.hideError(); },
+        handleLogin: async (event) => { event.preventDefault(); auth.hideError(); const username = document.getElementById('login-username').value.trim(); const password = document.getElementById('login-password').value; if (!username || !password) { auth.showError('Пожалуйста, заполните все поля'); return; } const loginBtn = document.getElementById('login-btn'); const originalText = loginBtn.innerHTML; loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Вход...'; loginBtn.disabled = true; try { const response = await api.login(username, auth.hashPassword(password)); if (response && response.success) { auth.onLoginSuccess(response.user); } else { auth.showError(response?.message || 'Неверное имя пользователя или пароль'); } } catch (error) { auth.showError('Ошибка соединения. Попробуйте позже.'); } finally { loginBtn.innerHTML = originalText; loginBtn.disabled = false; } },
+        handleRegister: async (event) => { event.preventDefault(); auth.hideError(); const username = document.getElementById('register-username').value.trim(); const password = document.getElementById('register-password').value; const usernameValidation = auth.validateUsername(username); if (!usernameValidation.isValid) { auth.showError(usernameValidation.message); return; } if (!password) { auth.showError('Пожалуйста, введите пароль'); return; } if (password.length < 8) { auth.showError('Пароль должен содержать минимум 8 символов'); return; } const registerBtn = document.getElementById('register-btn'); const originalText = registerBtn.innerHTML; registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Регистрация...'; registerBtn.disabled = true; try { const response = await api.register(username, auth.hashPassword(password)); if (response && response.success) { auth.onLoginSuccess(response.user); } else { auth.showError(response?.message || 'Ошибка регистрации. Возможно, имя пользователя уже занято.'); } } catch (error) { auth.showError('Ошибка соединения. Попробуйте позже.'); } finally { registerBtn.innerHTML = originalText; registerBtn.disabled = false; } },
+        handleLogout: async () => { await api.logout(); state.currentUser = null; ui.updateLoginState(); if (DOMElements.userStatsPanel) DOMElements.userStatsPanel.classList.add('hidden'); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); auth.clearForms(); auth.hideError(); },
+        onLoginSuccess: async (userData) => { state.currentUser = userData; ui.loadImages(); await ui.renderUserStats(); await ui.updateLoginState(); ui.showScreen('settings'); auth.hideError(); auth.clearForms(); },
         checkStatus: async () => { const response = await api.getStatus(); if (response && response.isLoggedIn) { auth.onLoginSuccess(response.user); } else { ui.showScreen('auth'); } }
     };
 
@@ -192,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
         undo: async () => { const gameState = await api.performAction('undo'); if (gameState) ui.render(gameState); },
         redo: async () => { const gameState = await api.performAction('redo'); if (gameState) ui.render(gameState); },
         abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.showScreen('settings'); },
-        playAgain: () => { timer.stop(); ui.showScreen('settings'); },
+        playAgain: () => { timer.stop(); ui.showScreen('settings'); (() => { ui.refreshUserData(); }, 500);},
         hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
         timeout: async () => { await api.performAction('timeout'); timer.stop(); ui.showScreen('settings'); },
         restart: async () => { const gameState = await api.performAction('restart'); if (gameState) { timer.stop(); ui.render(gameState); timer.start(gameState.startTime, state.boardSize); } },
@@ -207,28 +199,17 @@ document.addEventListener('DOMContentLoaded', () => {
             return `${minutes}:${seconds}`;
         },
         
-        // --- ИСПРАВЛЕНО: Добавлена проверка на существование панели статистики ---
         renderUserStats: async () => {
-            // Убедимся, что панель есть на странице, прежде чем что-то делать
-            if (!DOMElements.userStatsPanel) {
-                return;
-            }
-            const stats = await api.performAction('get_user_stats');
-            if (stats) {
-                DOMElements.statsUsername.textContent = stats.username;
-                DOMElements.statsStars.textContent = `${stats.total_stars} ★`;
-                DOMElements.statsBestTime.textContent = ui.formatTime(stats.best_time);
-                DOMElements.statsBestMoves.textContent = stats.best_moves > 0 ? stats.best_moves : '—';
-                DOMElements.userStatsPanel.classList.remove('hidden');
-            }
+            return ui.refreshUserData();
         },
+
         loadImages: async () => {
             DOMElements.defaultImagePreviews.innerHTML = '';
             DOMElements.userImagePreviews.innerHTML = '';
 
             const defaultImages = await api.performAction('get_default_images');
             if (defaultImages && defaultImages.length > 0) {
-                DOMElements.defaultImagePreviews.innerHTML = ''; // Очищаем контейнер
+                DOMElements.defaultImagePreviews.innerHTML = '';
                 defaultImages.forEach(imgData => {
                     const path = `/api/image/${imgData.id}`;
                     const img = ui.createPreviewImage(path, imgData.name, imgData.id);
@@ -346,14 +327,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
             event.target.value = '';
         },
+
         showScreen: (screenName) => {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            const screen = document.getElementById(`${screenName}-screen`); if(screen) screen.classList.add('active');
-            if (state.currentUser) { DOMElements.navButtons.forEach(btn => { btn.classList.toggle('active', btn.dataset.screen === screenName); }); }
-            if (screenName === 'leaderboard') { ui.renderLeaderboards(); }
-            if (screenName === 'history') { ui.renderGameHistory(); }
+            const screen = document.getElementById(`${screenName}-screen`); 
+            if(screen) screen.classList.add('active');
+            
+            if (state.currentUser) { 
+                DOMElements.navButtons.forEach(btn => { 
+                    btn.classList.toggle('active', btn.dataset.screen === screenName); 
+                }); 
+            }
+            
+            if (screenName === 'leaderboard') { 
+                ui.renderLeaderboards(); 
+            }
+            if (screenName === 'history') { 
+                ui.renderGameHistory(); 
+            }
+            if (screenName === 'settings') { 
+                setTimeout(() => {
+                    ui.refreshUserData();
+                }, 100);
+            }
         },
-        updateLoginState: () => { const isLoggedIn = !!state.currentUser; DOMElements.userStatus.classList.toggle('hidden', !isLoggedIn); DOMElements.navMenu.classList.toggle('hidden', !isLoggedIn); if (isLoggedIn) { DOMElements.welcomeMessage.textContent = `Добро пожаловать, ${state.currentUser.name}!`; } },
+
+        updateLoginState: async () => { 
+            const isLoggedIn = !!state.currentUser; 
+            DOMElements.userStatus.classList.toggle('hidden', !isLoggedIn); 
+            DOMElements.navMenu.classList.toggle('hidden', !isLoggedIn); 
+            
+            if (isLoggedIn) { 
+                await ui.refreshUserData();
+            } 
+        },
+
         render: (gameState) => {
             const { boardSize, boardState, moves, status, imageUrl, gameMode, stars, progress } = gameState;
             state.gameMode = gameMode;
@@ -361,6 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.currentBoardState = boardState;
             state.boardSize = boardSize;
             DOMElements.movesCounter.textContent = moves;
+            
             if (status === 'SOLVED') {
                 timer.stop();
                 DOMElements.winMoves.textContent = moves;
@@ -369,7 +378,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 DOMElements.winStars.innerHTML = (stars > 0) ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : 'Решено';
                 DOMElements.activeGameView.classList.add('hidden');
                 DOMElements.winOverlay.classList.remove('hidden');
-                ui.renderUserStats();
+                
+                ui.renderUserStats().then(() => {
+                    ui.updateLoginState();
+                });
             } else {
                 if (DOMElements.progressCounter && progress !== undefined) {
                     DOMElements.progressCounter.textContent = `${progress}%`;
@@ -378,10 +390,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 DOMElements.winOverlay.classList.add('hidden');
                 document.documentElement.style.setProperty('--board-size', boardSize);
                 DOMElements.gameBoard.innerHTML = '';
+                
                 boardState.forEach(value => {
-                    const tile = document.createElement('div'); tile.classList.add('tile');
-                    if (value === 0) { tile.classList.add('empty'); } 
-                    else {
+                    const tile = document.createElement('div'); 
+                    tile.classList.add('tile');
+                    if (value === 0) { 
+                        tile.classList.add('empty'); 
+                    } else {
                         tile.dataset.value = value;
                         if (gameMode === 'IMAGE' && imageUrl) {
                             let finalImageUrl = imageUrl;
@@ -400,41 +415,80 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
         },
+
         renderLeaderboards: async () => {
             const size = DOMElements.filterSize.value;
             const difficulty = DOMElements.filterDifficulty.value;
             const data = await api.performAction('get_leaderboards', { size: size, difficulty: difficulty });
-            DOMElements.leaderboardTables.innerHTML = '';
-            if(!data || !data.leaderboard) { DOMElements.leaderboardTables.innerHTML = '<p>Пока нет данных.</p>'; return; }
-            const createTable = (title, headers, rows, columns) => {
-                const container = document.createElement('div');
-                const h3 = document.createElement('h3'); h3.textContent = title; container.appendChild(h3);
-                if(!rows || rows.length === 0) { const p = document.createElement('p'); p.textContent = 'Для выбранных фильтров нет данных.'; container.appendChild(p); return container; }
-                const table = document.createElement('table'); const thead = document.createElement('thead'); const tbody = document.createElement('tbody');
-                thead.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
-                rows.forEach(row => { 
-                    const tr = document.createElement('tr'); 
-                    tr.innerHTML = columns.map(col => {
-                        let content = row[col] !== undefined ? row[col] : '';
-                        if (col === 'total_stars') { content = `<span class="star-count">${content}</span> <i class="fas fa-star gold-star"></i>`; }
-                        return `<td>${content}</td>`;
-                    }).join(''); 
-                    tbody.appendChild(tr); 
-                });
-                table.appendChild(thead); table.appendChild(tbody); container.appendChild(table);
-                return container;
-            };
-            const headers = ['Игрок', 'Звёзды', 'Решено', 'Не завершено'];
-            const columns = ['user', 'total_stars', 'solved_games', 'unfinished_games'];
-            DOMElements.leaderboardTables.appendChild(createTable('Топ игроков', headers, data.leaderboard, columns));
+            const container = DOMElements.leaderboardTables;
+            container.innerHTML = '';
+
+            if (!data || !data.leaderboard || data.leaderboard.length === 0) {
+                container.innerHTML = '<p><i>Пока нет данных для выбранных фильтров</i></p>';
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.className = 'leaderboard-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>Место</th>
+                        <th>Игрок</th>
+                        <th>Звёзды</th>
+                        <th>Решено</th>
+                        <th>Не завершено</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            `;
+            const tbody = table.querySelector('tbody');
+
+            data.leaderboard.forEach((player, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td>${player.user}</td>
+                    <td><span class="star-count">${player.total_stars}</span> <i class="fas fa-star gold-star"></i></td>
+                    <td>${player.solved_games}</td>
+                    <td>${player.unfinished_games}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            container.appendChild(table);
         },
+
+        refreshUserData: async () => {
+            if (!state.currentUser) return;
+            
+            try {
+                const stats = await api.performAction('get_user_stats');
+                if (stats) {
+
+                    if (DOMElements.userStatsPanel) {
+                        DOMElements.statsUsername.textContent = stats.username;
+                        DOMElements.statsStars.textContent = `${stats.total_stars} ★`;
+                        DOMElements.statsBestTime.textContent = ui.formatTime(stats.best_time);
+                        DOMElements.statsBestMoves.textContent = stats.best_moves > 0 ? stats.best_moves : '—';
+                        DOMElements.userStatsPanel.classList.remove('hidden');
+                    }
+
+                    state.currentUser.total_stars = stats.total_stars;
+                    DOMElements.welcomeMessage.innerHTML = `Добро пожаловать, ${state.currentUser.name} <span class="user-stars">${stats.total_stars} ★</span>`;
+                }
+            } catch (error) {
+                console.error('Error refreshing user data:', error);
+            }
+        },
+
         renderGameHistory: async () => {
             const historyData = await api.performAction('get_game_history');
             const container = DOMElements.historyTableContainer;
             container.innerHTML = ''; 
 
             if (!historyData || historyData.length === 0) {
-                container.innerHTML = '<p>Вы еще не сыграли ни одной игры.</p>';
+                container.innerHTML = '<p><i>Вы еще не сыграли ни одной игры</i></p>';
                 return;
             }
 
