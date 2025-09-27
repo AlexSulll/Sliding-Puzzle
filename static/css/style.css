@@ -129,8 +129,8 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 }
 
 /* --- ЭКРАН НАСТРОЕК --- */
-.form-group { margin-bottom: 20px; text-align: left; }
-.form-group label { display: block; margin-bottom: 8px; font-weight: 500; color: #4a5568; }
+.form-group { margin-bottom: 10px; text-align: left; }
+.form-group label { display: block; margin-bottom: 8px; margin-top: 8px; font-weight: 500; color: #4a5568; }
 
 .mode-selector { display: flex; gap: 15px; justify-content: center; margin-top: 10px;}
 .mode-option input[type="radio"] { display: none; }
@@ -180,7 +180,7 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 .leaderboard-filters { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; justify-content: center; }
 
 #leaderboard-tables { 
-    max-height: 40vh;
+    max-height: 50vh;
     overflow-y: auto;
     overflow-x: hidden;
     border-radius: 8px;
@@ -286,7 +286,7 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 
 /* --- ЭКРАН ИСТОРИИ ИГР --- */
 #history-table-container {
-    max-height: 52vh;
+    max-height: 58vh;
     overflow-y: auto;
     overflow-x: hidden;
     border-radius: 8px;
