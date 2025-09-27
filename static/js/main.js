@@ -446,9 +446,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             data.leaderboard.forEach((player, index) => {
                 const row = document.createElement('tr');
+                const maxLength = 17;
+                const truncatedUsername = player.user.length > maxLength ? player.user.slice(0, maxLength) + '...' : player.user;
                 row.innerHTML = `
                     <td>${index + 1}</td>
-                    <td>${player.user}</td>
+                    <td>${truncatedUsername}</td>
                     <td><span class="star-count">${player.total_stars}</span> <i class="fas fa-star gold-star"></i></td>
                     <td>${player.solved_games}</td>
                     <td>${player.unfinished_games}</td>
@@ -474,8 +476,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         DOMElements.userStatsPanel.classList.remove('hidden');
                     }
 
+                    const maxLength = 32;
+                    const truncatedName = state.currentUser.name.length > maxLength ? state.currentUser.name.slice(0, maxLength) + '...' : state.currentUser.name;
                     state.currentUser.total_stars = stats.total_stars;
-                    DOMElements.welcomeMessage.innerHTML = `Добро пожаловать, ${state.currentUser.name} <span class="user-stars">${stats.total_stars} ★</span>`;
+                    DOMElements.welcomeMessage.innerHTML = `Добро пожаловать, ${truncatedName} <span class="user-stars">${stats.total_stars} ★</span>`;
                 }
             } catch (error) {
                 console.error('Error refreshing user data:', error);

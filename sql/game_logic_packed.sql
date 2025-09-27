@@ -85,12 +85,6 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_user_id IN USERS.USER_ID%TYPE
     ) RETURN CLOB;
     
-    PROCEDURE get_user_image_data(
-        p_image_id   IN NUMBER,
-        o_mime_type  OUT VARCHAR2,
-        o_image_data OUT BLOB
-    );
-
     FUNCTION get_default_images RETURN CLOB;
     
     PROCEDURE get_default_image_data(
@@ -668,19 +662,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         RETURN NVL(l_json, '[]'); 
     END get_user_images;
 
-    PROCEDURE get_user_image_data(
-        p_image_id   IN NUMBER,
-        o_mime_type  OUT VARCHAR2,
-        o_image_data OUT BLOB
-    ) 
-    AS 
-    BEGIN 
-        SELECT MIME_TYPE, IMAGE_DATA 
-        INTO o_mime_type, o_image_data 
-        FROM USER_IMAGES 
-        WHERE IMAGE_ID = p_image_id; 
-    END get_user_image_data;
-    
     FUNCTION get_default_images RETURN CLOB 
     AS 
         l_json CLOB; 
