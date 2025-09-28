@@ -546,40 +546,68 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_json  CLOB;
         l_query VARCHAR2(4000);
     BEGIN
+        -- Основной запрос, который объединяет пользователей с двумя подзапросами:
+        -- ss (solved_stats) - статистика по решенным играм
+        -- us (unfinished_stats) - статистика по незавершенным играм
         l_query := '
             SELECT JSON_ARRAYAGG(
                 JSON_OBJECT(
-                    ''user'' VALUE u.USERNAME,
-                    ''total_stars'' VALUE NVL(SUM(g.STARS_EARNED), 0),
-                    ''solved_games'' VALUE COUNT(CASE WHEN g.STATUS = ''SOLVED'' THEN 1 END),
-                    ''unfinished_games'' VALUE COUNT(CASE WHEN g.STATUS IN (''ABANDONED'', ''TIMEOUT'') THEN 1 END)
-                ) ORDER BY NVL(SUM(g.STARS_EARNED), 0) DESC, COUNT(CASE WHEN g.STATUS = ''SOLVED'' THEN 1 END) DESC
+                    ''user''             VALUE u.USERNAME,
+                    ''total_stars''      VALUE NVL(ss.total_stars, 0),
+                    ''solved_games''     VALUE NVL(ss.solved_games, 0),
+                    ''unfinished_games'' VALUE NVL(us.unfinished_games, 0)
+                ) ORDER BY NVL(ss.total_stars, 0) DESC, NVL(ss.solved_games, 0) DESC
                 RETURNING CLOB
             )
             FROM USERS u
-            LEFT JOIN GAMES g ON u.USER_ID = g.USER_ID
-            WHERE 1=1 ';
+            LEFT JOIN (
+                SELECT
+                    s.USER_ID,
+                    SUM(s.STARS_EARNED) as total_stars,
+                    COUNT(s.GAME_ID) as solved_games
+                FROM (
+                    SELECT
+                        USER_ID, GAME_ID, STARS_EARNED,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY USER_ID, COALESCE(TO_CHAR(CHALLENGE_ID), INITIAL_BOARD_STATE)
+                            ORDER BY STARS_EARNED DESC NULLS LAST, COMPLETED_AT ASC
+                        ) as rn
+                    FROM GAMES
+                    WHERE STATUS = ''SOLVED''';
 
-        IF p_filter_size > 0 THEN
-            l_query := l_query || ' AND g.BOARD_SIZE = :1';
-        END IF;
+        -- Добавляем фильтры в первый подзапрос
+        IF p_filter_size > 0 THEN l_query := l_query || ' AND BOARD_SIZE = :size1'; END IF;
+        IF p_filter_difficulty > 0 THEN l_query := l_query || ' AND SHUFFLE_MOVES = :diff1'; END IF;
 
-        IF p_filter_difficulty > 0 THEN
-            l_query := l_query || ' AND g.SHUFFLE_MOVES = :2';
-        END IF;
+        l_query := l_query || '
+                ) s
+                WHERE s.rn = 1
+                GROUP BY s.USER_ID
+            ) ss ON u.USER_ID = ss.USER_ID
+            LEFT JOIN (
+                SELECT
+                    USER_ID,
+                    COUNT(GAME_ID) as unfinished_games
+                FROM GAMES
+                WHERE STATUS IN (''ABANDONED'', ''TIMEOUT'')';
 
-        l_query := l_query || ' GROUP BY u.USERNAME';
+        -- Добавляем фильтры во второй подзапрос
+        IF p_filter_size > 0 THEN l_query := l_query || ' AND BOARD_SIZE = :size2'; END IF;
+        IF p_filter_difficulty > 0 THEN l_query := l_query || ' AND SHUFFLE_MOVES = :diff2'; END IF;
 
+        l_query := l_query || '
+                GROUP BY USER_ID
+            ) us ON u.USER_ID = us.USER_ID
+            GROUP BY u.USERNAME';
+
+        -- Логика выполнения динамического запроса с правильной передачей параметров
         IF p_filter_size > 0 AND p_filter_difficulty > 0 THEN
-            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_difficulty;
+            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_difficulty, p_filter_size, p_filter_difficulty;
         ELSIF p_filter_size > 0 THEN
-            l_query := REPLACE(l_query, ':2', 'NULL');
-            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size;
+            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_size;
         ELSIF p_filter_difficulty > 0 THEN
-            l_query := REPLACE(l_query, ':1', 'NULL');
-            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_difficulty;
+            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_difficulty, p_filter_difficulty;
         ELSE
-            l_query := REPLACE(REPLACE(l_query, ':1', 'NULL'), ':2', 'NULL');
             EXECUTE IMMEDIATE l_query INTO l_json;
         END IF;
 
@@ -1157,49 +1185,39 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     AS
         l_username      USERS.USERNAME%TYPE;
         l_total_stars   NUMBER;
-        l_best_time     NUMBER;
-        l_best_moves    NUMBER;
-        l_json_clob     CLOB;
     BEGIN
         -- Получаем имя пользователя
         SELECT USERNAME INTO l_username FROM USERS WHERE USER_ID = p_user_id;
 
-        -- Получаем статистику из решенных игр
+        -- Агрегируем звезды только из лучших попыток для каждой уникальной головоломки
         SELECT
-            NVL(SUM(STARS_EARNED), 0),
-            NVL(MIN(CASE WHEN STATUS = 'SOLVED' THEN ROUND((COMPLETED_AT - START_TIME) * 86400) END), 0),
-            NVL(MIN(CASE WHEN STATUS = 'SOLVED' THEN MOVE_COUNT END), 0)
+            NVL(SUM(STARS_EARNED), 0)
         INTO
-            l_total_stars,
-            l_best_time,
-            l_best_moves
-        FROM GAMES
-        WHERE USER_ID = p_user_id AND STATUS = 'SOLVED';
-
-        -- Формируем JSON-ответ
-        SELECT JSON_OBJECT(
-            'username'    VALUE l_username,
-            'total_stars' VALUE l_total_stars,
-            'best_time'   VALUE l_best_time,
-            'best_moves'  VALUE l_best_moves
+            l_total_stars
+        FROM (
+            SELECT
+                STARS_EARNED,
+                ROW_NUMBER() OVER (
+                    PARTITION BY COALESCE(TO_CHAR(CHALLENGE_ID), INITIAL_BOARD_STATE)
+                    ORDER BY STARS_EARNED DESC
+                ) as rn
+            FROM GAMES
+            WHERE USER_ID = p_user_id AND STATUS = 'SOLVED'
         )
-        INTO l_json_clob
-        FROM DUAL;
-        
-        RETURN l_json_clob;
+        WHERE rn = 1; -- Отбираем только самые лучшие попытки
 
+        -- Формируем итоговый JSON-ответ только с двумя полями
+        RETURN JSON_OBJECT(
+            'username'    VALUE l_username,
+            'total_stars' VALUE l_total_stars
+        );
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
-            -- Если у пользователя еще нет игр, возвращаем пустые данные
-            SELECT JSON_OBJECT(
-                'username'    VALUE l_username,
-                'total_stars' VALUE 0,
-                'best_time'   VALUE 0,
-                'best_moves'  VALUE 0
-            )
-            INTO l_json_clob
-            FROM DUAL;
-            RETURN l_json_clob;
+            -- Срабатывает, если передан неверный p_user_id
+            RETURN JSON_OBJECT(
+                'username'    VALUE 'Unknown',
+                'total_stars' VALUE 0
+            );
     END get_user_stats;
     
 END GAME_MANAGER_PKG;

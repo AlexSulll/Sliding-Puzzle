@@ -68,9 +68,6 @@ document.addEventListener('DOMContentLoaded', () => {
         historyTableContainer: document.getElementById('history-table-container'),
         userStatsPanel: document.getElementById('user-stats-panel'),
         statsUsername: document.getElementById('stats-username'),
-        statsStars: document.getElementById('stats-stars'),
-        statsBestTime: document.getElementById('stats-best-time'),
-        statsBestMoves: document.getElementById('stats-best-moves'),
         restartBtn: document.getElementById('restart-btn'),
         progressCounter: document.getElementById('progress-counter')
     };
@@ -467,15 +464,6 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const stats = await api.performAction('get_user_stats');
                 if (stats) {
-
-                    if (DOMElements.userStatsPanel) {
-                        DOMElements.statsUsername.textContent = stats.username;
-                        DOMElements.statsStars.textContent = `${stats.total_stars} ★`;
-                        DOMElements.statsBestTime.textContent = ui.formatTime(stats.best_time);
-                        DOMElements.statsBestMoves.textContent = stats.best_moves > 0 ? stats.best_moves : '—';
-                        DOMElements.userStatsPanel.classList.remove('hidden');
-                    }
-
                     const maxLength = 32;
                     const truncatedName = state.currentUser.name.length > maxLength ? state.currentUser.name.slice(0, maxLength) + '...' : state.currentUser.name;
                     state.currentUser.total_stars = stats.total_stars;
