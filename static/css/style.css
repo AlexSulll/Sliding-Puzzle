@@ -81,13 +81,13 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 .replay-btn { background-color: var(--primary-color); color: white; border: 1px solid var(--border-color); padding: 2px 6px !important; font-size: 0.7rem !important; min-width: 100px !important; max-width: 100px !important; height: 28px !important; line-height: 1; border-radius: 8px; display: flex !important; align-items: center !important; justify-content: center !important; text-align: center !important; gap: 4px !important;}
 .btn-secondary:hover { background-color: #e2e8f0; }
 .btn-danger { background-color: var(--danger-color); color: white; }
-.btn-danger:hover { background-color: #c53030; }
+.btn-danger:hover { background-color: var(--danger-color); }
 .btn-large { padding: 15px 30px; font-size: 1.1rem; width: 100%; }
 
 .nav-buttons { margin-top: 15px; display: flex; justify-content: center; gap: 10px; }
 .nav-btn { background: #f1f3f5; border: none; padding: 8px 18px; border-radius: 20px; cursor: pointer; font-weight: 500; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px; width: 120px; justify-content: center; }
 .nav-btn.active, .nav-btn:hover { background: var(--primary-color); color: white; }
-.logout-btn { background: #ef5a5a; border: none; padding: 8px 18px; border-radius: 20px; cursor: pointer; font-weight: 500; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px; width: 120px; justify-content: center;}
+.logout-btn { background: var(--danger-color); color: white; border: none; padding: 8px 18px; border-radius: 20px; cursor: pointer; font-weight: 500; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px; width: 120px; justify-content: center; }
 
 
 /* --- ЭКРАН АВТОРИЗАЦИИ --- */
@@ -241,7 +241,7 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 }
 
 .status-timeout {
-    color: #e53e3e;
+    color: var(--danger-color);
     font-weight: bold;
 }
 
