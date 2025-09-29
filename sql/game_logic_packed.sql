@@ -329,6 +329,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 l_optimal_moves   := l_daily.OPTIMAL_MOVES;
                 l_image_id_to_use := l_daily.IMAGE_ID;
                 l_game_mode_to_use := CASE WHEN l_daily.IMAGE_ID IS NOT NULL THEN 'IMAGE' ELSE 'INTS' END;
+            EXCEPTION
+                WHEN NO_DATA_FOUND THEN
+                    RETURN '{"error":"Ежедневный челлендж на сегодня не найден."}';
             END;
         ELSE
             -- Логика обычной игры
@@ -722,6 +725,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     RETURN VARCHAR2
     AS 
     BEGIN 
+        UPDATE GAMES SET IMAGE_ID = NULL 
+        WHERE IMAGE_ID = p_image_id;
         DELETE FROM USER_IMAGES 
         WHERE IMAGE_ID = p_image_id AND USER_ID = p_user_id; 
         COMMIT;
