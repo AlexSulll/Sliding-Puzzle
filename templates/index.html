@@ -65,8 +65,14 @@
                 <div class="setting-item daily-challenge-toggle">
                     <input type="checkbox" id="daily-challenge-check">
                     <label for="daily-challenge-check" class="daily-label">
-                        <i class="fas fa-calendar-day"></i>
-                        <span>Ежедневный челлендж</span>
+                        <div class="daily-icon-container">
+                            <i class="fas fa-calendar-day daily-icon daily-icon-primary"></i>
+                            <i class="fas fa-bolt daily-icon daily-icon-secondary"></i>
+                        </div>
+                        <div class="daily-text-container">
+                            <span class="daily-text daily-text-primary">Ежедневный челлендж</span>
+                            <span class="daily-text daily-text-secondary">Бросить вызов</span>
+                        </div>
                     </label>
                 </div>
                 
@@ -98,26 +104,55 @@
 
                     <div class="form-group">
                         <label for="board-size">Размер поля</label>
-                        <div class="custom-select-wrapper">
-                            <select id="board-size">
-                                <option value="3">3x3</option>
-                                <option value="4" selected>4x4</option>
-                                <option value="5">5x5</option>
-                                <option value="6">6x6</option>
-                            </select>
+                        <select id="board-size" class="hidden">
+                            <option value="3">3x3</option>
+                            <option value="4" selected>4x4</option>
+                            <option value="5">5x5</option>
+                            <option value="6">6x6</option>
+                        </select>
+                        <div class="size-selector">
+                            <button type="button" class="size-btn" data-size="3">
+                                <span class="size-main">3x3</span>
+                                <span class="size-label">Быстрая игра</span>
+                            </button>
+                            <button type="button" class="size-btn active" data-size="4">
+                                <span class="size-main">4x4</span>
+                                <span class="size-label">Классика</span>
+                            </button>
+                            <button type="button" class="size-btn" data-size="5">
+                                <span class="size-main">5x5</span>
+                                <span class="size-label">Сложный</span>
+                            </button>
+                            <button type="button" class="size-btn" data-size="6">
+                                <span class="size-main">6x6</span>
+                                <span class="size-label">Эксперт</span>
+                            </button>
                         </div>
                     </div>
                     
                     <div class="form-group">
                         <label for="difficulty">Сложность</label>
-                        <div class="custom-select-wrapper">
-                            <select id="difficulty">
-                                <option value="30">Легко</option>
-                                <option value="60" selected>Нормально</option>
-                                <option value="80">Сложно</option>
-                            </select>
+                        <select id="difficulty" class="hidden">
+                            <option value="30">Легко</option>
+                            <option value="60" selected>Нормально</option>
+                            <option value="80">Сложно</option>
+                        </select>
+                        <div class="difficulty-selector">
+                            <button type="button" class="difficulty-btn" data-difficulty="30">
+                                <i class="fas fa-feather difficulty-icon"></i>
+                                <span class="difficulty-label">Легко</span>
+                            </button>
+                            <button type="button" class="difficulty-btn active" data-difficulty="60">
+                                <i class="fas fa-balance-scale difficulty-icon"></i>
+                                <span class="difficulty-label">Нормально</span>
+                            </button>
+                            <button type="button" class="difficulty-btn" data-difficulty="80">
+                                <i class="fas fa-fire difficulty-icon"></i>
+                                <span class="difficulty-label">Сложно</span>
+                            </button>
                         </div>
                     </div>
+
                 </div>
                 <button id="start-btn" class="btn btn-primary btn-large"><i class="fas fa-rocket"></i> Начать игру</button>
             </section>

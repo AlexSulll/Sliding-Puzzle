@@ -365,13 +365,11 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     FUNCTION abandon_game(p_session_id IN GAMES.GAME_ID%TYPE)
     RETURN VARCHAR2
     AS
-        l_start_time DATE;
     BEGIN
-        SELECT START_TIME INTO l_start_time FROM GAMES WHERE GAME_ID = p_session_id;
 
         UPDATE GAMES
         SET STATUS = 'ABANDONED',
-            COMPLETED_AT = SYSDATE,
+            COMPLETED_AT = NULL,
             CURRENT_MOVE_ORDER = NULL
         WHERE GAME_ID = p_session_id;
 
@@ -383,9 +381,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     
     PROCEDURE timeout_game(p_session_id IN GAMES.GAME_ID%TYPE)
     AS
-        l_game GAMES%ROWTYPE;
     BEGIN
-        SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id;
 
         UPDATE GAMES
         SET STATUS = 'TIMEOUT',
@@ -417,9 +413,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         SET 
             MOVE_COUNT = 0,
             CURRENT_MOVE_ORDER = 0,
-            START_TIME = SYSDATE,
-            COMPLETED_AT = NULL,
-            STATUS = 'ACTIVE'
+            START_TIME = SYSDATE
         WHERE GAME_ID = p_session_id;
         
         COMMIT;
@@ -559,7 +553,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                     ''total_stars''      VALUE NVL(ss.total_stars, 0),
                     ''solved_games''     VALUE NVL(ss.solved_games, 0),
                     ''unfinished_games'' VALUE NVL(us.unfinished_games, 0)
-                ) ORDER BY NVL(ss.total_stars, 0) DESC, NVL(ss.solved_games, 0) DESC
+                ) ORDER BY NVL(ss.total_stars, 0) DESC, NVL(ss.solved_games, 0) DESC, u.USERNAME ASC
                 RETURNING CLOB
             )
             FROM USERS u
@@ -600,10 +594,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
         l_query := l_query || '
                 GROUP BY USER_ID
-            ) us ON u.USER_ID = us.USER_ID
-            GROUP BY u.USERNAME';
+            ) us ON u.USER_ID = us.USER_ID';
 
-        -- Логика выполнения динамического запроса с правильной передачей параметров
+        -- Логика выполнения динамического запроса
         IF p_filter_size > 0 AND p_filter_difficulty > 0 THEN
             EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_difficulty, p_filter_size, p_filter_difficulty;
         ELSIF p_filter_size > 0 THEN
@@ -615,6 +608,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         END IF;
 
         RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'));
+    EXCEPTION
+        WHEN OTHERS THEN
+            RETURN '{"leaderboard": []}';
     END get_leaderboards;
     
     FUNCTION get_game_history(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB

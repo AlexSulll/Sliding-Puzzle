@@ -114,13 +114,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // === Game Logic Module: Uses the simplified API ===
     const game = {
         start: async (forceNew = false, replayGameId = null) => {
-            const size = parseInt(DOMElements.boardSizeSelect.value, 10);
+            const size = state.isDaily ? 4 : parseInt(DOMElements.boardSizeSelect.value, 10);
             const settings = {
                 isDailyChallenge: state.isDaily,
-                gameMode: state.gameMode,
-                imageId: state.imageId,
+                gameMode: state.isDaily ? 'INTS' : state.gameMode,
+                imageId: state.isDaily ? null : state.imageId,
                 size: size,
-                difficulty: parseInt(DOMElements.difficultySelect.value, 10),
+                difficulty: state.isDaily ? 60 : parseInt(DOMElements.difficultySelect.value, 10),
                 forceNew: forceNew,
                 replayGameId: replayGameId
             };
@@ -181,7 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
         undo: async () => { const gameState = await api.performAction('undo'); if (gameState) ui.render(gameState); },
         redo: async () => { const gameState = await api.performAction('redo'); if (gameState) ui.render(gameState); },
         abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.showScreen('settings'); },
-        playAgain: () => { timer.stop(); ui.showScreen('settings'); (() => { ui.refreshUserData(); }, 500);},
+        playAgain: () => { timer.stop(); ui.showScreen('settings'); setTimeout(() => { ui.refreshUserData(); }, 500);},
         hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
         timeout: async () => { await api.performAction('timeout'); timer.stop(); ui.showScreen('settings'); },
         restart: async () => { const gameState = await api.performAction('restart'); if (gameState) { timer.stop(); ui.render(gameState); timer.start(gameState.startTime, state.boardSize); } },
@@ -343,6 +343,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 ui.renderGameHistory(); 
             }
             if (screenName === 'settings') { 
+                // Сбрасываем состояние ежедневного челленджа при возврате на экран настроек
+                DOMElements.dailyCheck.checked = false;
+                state.isDaily = false;
+                DOMElements.regularSettings.classList.remove('hidden');
+                
                 setTimeout(() => {
                     ui.refreshUserData();
                 }, 100);
@@ -508,7 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${game.moves}</td>
                     <td>${timeStr}</td>
                     <td>${statusText}</td>
-                    <td><button class="btn btn-secondary replay-btn" data-game-id="${game.gameId}">Переиграть</button></td>
+                    <td><button class="replay-btn" data-game-id="${game.gameId}"><i class="fas fa-play"></i> Переиграть</button></td>
                 `;
                 tbody.appendChild(row);
             });
@@ -547,7 +552,23 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.showRegisterLink.addEventListener('click', (e) => { e.preventDefault(); DOMElements.loginView.classList.add('hidden'); DOMElements.registerView.classList.remove('hidden'); DOMElements.authError.textContent = ''; });
         DOMElements.showLoginLink.addEventListener('click', (e) => { e.preventDefault(); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); DOMElements.authError.textContent = ''; });
         DOMElements.navButtons.forEach(btn => btn.addEventListener('click', () => ui.showScreen(btn.dataset.screen)));
-        DOMElements.dailyCheck.addEventListener('change', (e) => { state.isDaily = e.target.checked; DOMElements.regularSettings.classList.toggle('hidden', state.isDaily); });
+        
+        // Обновленный обработчик для ежедневного челленджа
+        DOMElements.dailyCheck.addEventListener('change', async (e) => {
+            const isChecked = e.target.checked;
+            
+            if (isChecked) {
+                // Устанавливаем флаг и немедленно запускаем игру
+                state.isDaily = true;
+                DOMElements.regularSettings.classList.add('hidden');
+                await game.start(false, null);
+            } else {
+                // Если чекбокс снят, просто обновляем состояние
+                state.isDaily = false;
+                DOMElements.regularSettings.classList.remove('hidden');
+            }
+        });
+        
         DOMElements.modeRadios.forEach(radio => radio.addEventListener('change', (e) => {
             state.gameMode = e.target.value;
             DOMElements.imageSelection.classList.toggle('hidden', state.gameMode !== 'IMAGE');
@@ -627,6 +648,85 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
+
+        DOMElements.dailyCheck.addEventListener('change', async (e) => {
+        const isChecked = e.target.checked;
+        
+        if (isChecked) {
+            // Устанавливаем флаг и немедленно запускаем игру
+            state.isDaily = true;
+            DOMElements.regularSettings.classList.add('hidden');
+            await game.start(false, null);
+        } else {
+            // Если чекбокс снят, просто обновляем состояние
+            state.isDaily = false;
+            DOMElements.regularSettings.classList.remove('hidden');
+        }
+    });
+
+    // Добавляем обработчики для плавной анимации при наведении
+    const dailyLabel = document.querySelector('.daily-label');
+    const dailyTextPrimary = document.querySelector('.daily-text-primary');
+    const dailyTextSecondary = document.querySelector('.daily-text-secondary');
+    const dailyIcon = document.querySelector('.daily-label i');
+
+    if (dailyLabel) {
+        // Для плавного перехода при быстром наведении/снятии
+        dailyLabel.addEventListener('mouseenter', () => {
+            dailyTextPrimary.style.transition = 'transform 0.3s ease';
+            dailyTextSecondary.style.transition = 'transform 0.3s ease';
+            if (dailyIcon) {
+                dailyIcon.style.transition = 'transform 0.3s ease, color 0.3s ease';
+            }
+        });
+
+        dailyLabel.addEventListener('mouseleave', () => {
+            dailyTextPrimary.style.transition = 'transform 0.3s ease';
+            dailyTextSecondary.style.transition = 'transform 0.3s ease';
+            if (dailyIcon) {
+                dailyIcon.style.transition = 'transform 0.3s ease, color 0.3s ease';
+            }
+        });
+    }
+
+        document.querySelectorAll('.size-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+            // Убираем активный класс у всех кнопок
+                document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
+                // Добавляем активный класс к нажатой кнопке
+                this.classList.add('active');
+                // Обновляем значение в скрытом select
+                const size = this.dataset.size;
+                DOMElements.boardSizeSelect.value = size;
+                
+                // Триггерим событие change для совместимости
+                DOMElements.boardSizeSelect.dispatchEvent(new Event('change'));
+            });
+        });
+
+        document.querySelectorAll('.difficulty-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                // Убираем активный класс у всех кнопок
+                document.querySelectorAll('.difficulty-btn').forEach(b => b.classList.remove('active'));
+                // Добавляем активный класс к нажатой кнопке
+                this.classList.add('active');
+                // Обновляем значение в скрытом select
+                const difficulty = this.dataset.difficulty;
+                DOMElements.difficultySelect.value = difficulty;
+                
+                // Триггерим событие change для совместимости
+                DOMElements.difficultySelect.dispatchEvent(new Event('change'));
+            });
+        });
+
+    // Инициализация активной кнопки при загрузке
+    const initialDifficulty = DOMElements.difficultySelect.value;
+    document.querySelector(`.difficulty-btn[data-difficulty="${initialDifficulty}"]`).classList.add('active');
+
+    // Инициализация активной кнопки при загрузке
+    const initialSize = DOMElements.boardSizeSelect.value;
+    document.querySelector(`.size-btn[data-size="${initialSize}"]`).classList.add('active');
+
         DOMElements.userImagePreviews.addEventListener('click', async (event) => {
             const deleteButton = event.target.closest('.delete-btn');
             if (deleteButton) {
