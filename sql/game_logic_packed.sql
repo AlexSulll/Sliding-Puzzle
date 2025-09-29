@@ -919,9 +919,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             RETURN '{"status":"error", "message":"Session not found or history missing"}';
     END get_game_state_json;
     
-    -- =============================================================================
-    -- Вспомогательная функция для расчета оптимального пути (вставить в PACKAGE BODY)
-    -- =============================================================================
     FUNCTION calculate_optimal_path_length(
         p_board_state IN VARCHAR2,
         p_board_size_param IN NUMBER

@@ -190,7 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // === UI Module: Handles all DOM manipulation ===
     const ui = {
         formatTime: (totalSeconds) => {
-            if (!totalSeconds || totalSeconds === 0) return '—';
+            if (!totalSeconds || totalSeconds === 0) return '--:--';
             const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
             const seconds = String(totalSeconds % 60).padStart(2, '0');
             return `${minutes}:${seconds}`;
@@ -450,8 +450,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 const row = document.createElement('tr');
                 const maxLength = 17;
                 const truncatedUsername = player.user.length > maxLength ? player.user.slice(0, maxLength) + '...' : player.user;
+
+                let place = '';
+                if (index === 0) {
+                    place = '<span><i class="fas fa-trophy rating-icon gold"></i></span>';
+                } else if (index === 1) {
+                    place = '<span><i class="fas fa-medal rating-icon silver"></i></span>';
+                } else if (index === 2) {
+                    place = '<span><i class="fas fa-medal rating-icon bronze"></i></span>';
+                } else {
+                    place = '#'+(index + 1).toString();
+                }
+
                 row.innerHTML = `
-                    <td>${index + 1}</td>
+                    <td>${place}</td>
                     <td>${truncatedUsername}</td>
                     <td><span class="star-count">${player.total_stars}</span> <i class="fas fa-star gold-star"></i></td>
                     <td>${player.solved_games}</td>
@@ -495,8 +507,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const tbody = table.querySelector('tbody');
 
             historyData.forEach(game => {
-                const timeStr = ui.formatTime(game.time);
+                let timeStr = ui.formatTime(game.time);
                 let statusText = '';
+                let moves = game.moves;
 
                 if (game.status === 'SOLVED') {
                     statusText = game.stars > 0 ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` : 'Решено';
@@ -504,13 +517,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     statusText = '<span class="status-abandoned">Сдался</span>';
                 } else if (game.status === 'TIMEOUT') {
                     statusText = '<span class="status-timeout">Время вышло</span>';
+                    timeStr = '--:--'
                 }
 
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${game.date}</td>
                     <td>${game.size}x${game.size}</td>
-                    <td>${game.moves}</td>
+                    <td>${moves}</td>
                     <td>${timeStr}</td>
                     <td>${statusText}</td>
                     <td><button class="replay-btn" data-game-id="${game.gameId}"><i class="fas fa-play"></i> Переиграть</button></td>
