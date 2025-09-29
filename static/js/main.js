@@ -453,11 +453,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 let place = '';
                 if (index === 0) {
-                    place = '<span><i class="fas fa-trophy" style="color: gold;"></i></span>';
+                    place = '<span><i class="fas fa-trophy rating-icon gold"></i></span>';
                 } else if (index === 1) {
-                    place = '<span><i class="fas fa-medal" style="color: silver;"></i></span>';
+                    place = '<span><i class="fas fa-medal rating-icon silver"></i></span>';
                 } else if (index === 2) {
-                    place = '<span><i class="fas fa-medal" style="color: #cd7f32;"></i></span>';
+                    place = '<span><i class="fas fa-medal rating-icon bronze"></i></span>';
                 } else {
                     place = '#'+(index + 1).toString();
                 }
@@ -507,22 +507,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const tbody = table.querySelector('tbody');
 
             historyData.forEach(game => {
-                const timeStr = ui.formatTime(game.time);
+                let timeStr = ui.formatTime(game.time);
                 let statusText = '';
+                let moves = game.moves;
 
                 if (game.status === 'SOLVED') {
                     statusText = game.stars > 0 ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` : 'Решено';
                 } else if (game.status === 'ABANDONED') {
                     statusText = '<span class="status-abandoned">Сдался</span>';
+                    timeStr = '--:--'
+                    moves = '-'
                 } else if (game.status === 'TIMEOUT') {
                     statusText = '<span class="status-timeout">Время вышло</span>';
+                    timeStr = '--:--'
+                    moves = '-'
                 }
 
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${game.date}</td>
                     <td>${game.size}x${game.size}</td>
-                    <td>${game.moves}</td>
+                    <td>${moves}</td>
                     <td>${timeStr}</td>
                     <td>${statusText}</td>
                     <td><button class="replay-btn" data-game-id="${game.gameId}"><i class="fas fa-play"></i> Переиграть</button></td>
