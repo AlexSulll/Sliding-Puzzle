@@ -17,6 +17,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const DOMElements = {
         authScreen: document.getElementById('auth-screen'),
         settingsScreen: document.getElementById('settings-screen'),
+        dailyChallengeScreen: document.getElementById('daily-challenge-screen'),
+        dailyLeaderboardContainer: document.getElementById('daily-leaderboard-container'),
+        startDailyChallengeBtn: document.getElementById('start-daily-challenge-btn'),
+        backToSettingsBtn: document.getElementById('back-to-settings-btn'),
         gameScreen: document.getElementById('game-screen'),
         leaderboardScreen: document.getElementById('leaderboard-screen'),
         historyScreen: document.getElementById('history-screen'),
@@ -533,6 +537,47 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             container.appendChild(table);
         },
+        renderDailyLeaderboard: async () => {
+            const data = await api.performAction('get_daily_leaderboard');
+            const container = DOMElements.dailyLeaderboardContainer;
+            container.innerHTML = '<h3><i class="fas fa-trophy"></i> Рейтинг дня</h3>';
+
+            if (!data || !data.leaderboard || data.leaderboard.length === 0) {
+                container.innerHTML += '<p><i>Сегодня еще никто не прошел челлендж. Будьте первым!</i></p>';
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.className = 'leaderboard-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th>Место</th>
+                        <th>Игрок</th>
+                        <th>Ходы</th>
+                        <th>Время</th>
+                        <th>Звёзды</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            `;
+            const tbody = table.querySelector('tbody');
+
+            data.leaderboard.forEach((player, index) => {
+                const row = document.createElement('tr');
+                const place = ['🥇', '🥈', '🥉'][index] || `#${index + 1}`;
+                
+                row.innerHTML = `
+                    <td>${place}</td>
+                    <td>${player.user}</td>
+                    <td><strong>${player.moves}</strong></td>
+                    <td>${ui.formatTime(player.time)}</td>
+                    <td>${'★'.repeat(player.stars)}</td>
+                `;
+                tbody.appendChild(row);
+            });
+            container.appendChild(table);
+        },
         highlightHint: (tileValue) => { const tile = DOMElements.gameBoard.querySelector(`[data-value="${tileValue}"]`); if (tile) { tile.classList.add('hint'); setTimeout(() => tile.classList.remove('hint'), 1000); } },
     };
     
@@ -567,19 +612,12 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.showLoginLink.addEventListener('click', (e) => { e.preventDefault(); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); DOMElements.authError.textContent = ''; });
         DOMElements.navButtons.forEach(btn => btn.addEventListener('click', () => ui.showScreen(btn.dataset.screen)));
         
-        // Обновленный обработчик для ежедневного челленджа
-        DOMElements.dailyCheck.addEventListener('change', async (e) => {
-            const isChecked = e.target.checked;
-            
-            if (isChecked) {
-                // Устанавливаем флаг и немедленно запускаем игру
-                state.isDaily = true;
-                DOMElements.regularSettings.classList.add('hidden');
-                await game.start(false, null);
+        DOMElements.dailyCheck.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                ui.showScreen('daily-challenge');
+                ui.renderDailyLeaderboard();
             } else {
-                // Если чекбокс снят, просто обновляем состояние
-                state.isDaily = false;
-                DOMElements.regularSettings.classList.remove('hidden');
+                ui.showScreen('settings');
             }
         });
         
@@ -663,45 +701,32 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        DOMElements.dailyCheck.addEventListener('change', async (e) => {
-        const isChecked = e.target.checked;
         
-        if (isChecked) {
-            // Устанавливаем флаг и немедленно запускаем игру
-            state.isDaily = true;
-            DOMElements.regularSettings.classList.add('hidden');
-            await game.start(false, null);
-        } else {
-            // Если чекбокс снят, просто обновляем состояние
-            state.isDaily = false;
-            DOMElements.regularSettings.classList.remove('hidden');
-        }
-    });
 
     // Добавляем обработчики для плавной анимации при наведении
-    const dailyLabel = document.querySelector('.daily-label');
-    const dailyTextPrimary = document.querySelector('.daily-text-primary');
-    const dailyTextSecondary = document.querySelector('.daily-text-secondary');
-    const dailyIcon = document.querySelector('.daily-label i');
+        const dailyLabel = document.querySelector('.daily-label');
+        const dailyTextPrimary = document.querySelector('.daily-text-primary');
+        const dailyTextSecondary = document.querySelector('.daily-text-secondary');
+        const dailyIcon = document.querySelector('.daily-label i');
 
-    if (dailyLabel) {
+        if (dailyLabel) {
         // Для плавного перехода при быстром наведении/снятии
-        dailyLabel.addEventListener('mouseenter', () => {
-            dailyTextPrimary.style.transition = 'transform 0.3s ease';
-            dailyTextSecondary.style.transition = 'transform 0.3s ease';
-            if (dailyIcon) {
-                dailyIcon.style.transition = 'transform 0.3s ease, color 0.3s ease';
-            }
-        });
+            dailyLabel.addEventListener('mouseenter', () => {
+                dailyTextPrimary.style.transition = 'transform 0.3s ease';
+                dailyTextSecondary.style.transition = 'transform 0.3s ease';
+                if (dailyIcon) {
+                    dailyIcon.style.transition = 'transform 0.3s ease, color 0.3s ease';
+                }
+            });
 
-        dailyLabel.addEventListener('mouseleave', () => {
-            dailyTextPrimary.style.transition = 'transform 0.3s ease';
-            dailyTextSecondary.style.transition = 'transform 0.3s ease';
-            if (dailyIcon) {
-                dailyIcon.style.transition = 'transform 0.3s ease, color 0.3s ease';
-            }
-        });
-    }
+            dailyLabel.addEventListener('mouseleave', () => {
+                dailyTextPrimary.style.transition = 'transform 0.3s ease';
+                dailyTextSecondary.style.transition = 'transform 0.3s ease';
+                if (dailyIcon) {
+                    dailyIcon.style.transition = 'transform 0.3s ease, color 0.3s ease';
+                }
+            });
+        }
 
         document.querySelectorAll('.size-btn').forEach(btn => {
             btn.addEventListener('click', function() {
@@ -734,12 +759,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
     // Инициализация активной кнопки при загрузке
-    const initialDifficulty = DOMElements.difficultySelect.value;
-    document.querySelector(`.difficulty-btn[data-difficulty="${initialDifficulty}"]`).classList.add('active');
+        const initialDifficulty = DOMElements.difficultySelect.value;
+        document.querySelector(`.difficulty-btn[data-difficulty="${initialDifficulty}"]`).classList.add('active');
 
     // Инициализация активной кнопки при загрузке
-    const initialSize = DOMElements.boardSizeSelect.value;
-    document.querySelector(`.size-btn[data-size="${initialSize}"]`).classList.add('active');
+        const initialSize = DOMElements.boardSizeSelect.value;
+        document.querySelector(`.size-btn[data-size="${initialSize}"]`).classList.add('active');
 
         DOMElements.userImagePreviews.addEventListener('click', async (event) => {
             const deleteButton = event.target.closest('.delete-btn');
@@ -754,6 +779,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             }
+        });
+        DOMElements.startDailyChallengeBtn.addEventListener('click', () => {
+            state.isDaily = true;
+            DOMElements.regularSettings.classList.add('hidden');
+            game.start(false, null);
+        });
+
+        DOMElements.backToSettingsBtn.addEventListener('click', () => {
+            DOMElements.dailyCheck.checked = false;
+            state.isDaily = false;
+            DOMElements.regularSettings.classList.remove('hidden');
+            ui.showScreen('settings');
         });
         auth.checkStatus();
     }

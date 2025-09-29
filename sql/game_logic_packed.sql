@@ -70,6 +70,10 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_filter_difficulty IN NUMBER
     ) RETURN CLOB;
 
+    FUNCTION get_daily_leaderboard (
+        p_challenge_date IN DATE DEFAULT TRUNC(SYSDATE)
+    ) RETURN CLOB;
+
     FUNCTION get_game_history(
         p_user_id IN USERS.USER_ID%TYPE
     ) RETURN CLOB;
@@ -627,6 +631,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 'status' VALUE g.STATUS,
                 'stars'  VALUE g.STARS_EARNED
             ) ORDER BY g.START_TIME DESC
+            RETURNING CLOB
         )
         INTO l_json
         FROM GAMES g
@@ -1217,5 +1222,63 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 'total_stars' VALUE 0
             );
     END get_user_stats;
+
+    FUNCTION get_daily_leaderboard(
+        p_challenge_date IN DATE DEFAULT TRUNC(SYSDATE)
+    ) RETURN CLOB
+    AS
+        l_json CLOB;
+        l_challenge_id DAILY_CHALLENGES.CHALLENGE_ID%TYPE;
+    BEGIN
+        BEGIN
+            SELECT CHALLENGE_ID INTO l_challenge_id
+            FROM DAILY_CHALLENGES
+            WHERE CHALLENGE_DATE = p_challenge_date;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RETURN '{"leaderboard": []}';
+        END;
+
+        WITH player_best_attempts AS (
+            SELECT
+                g.USER_ID,
+                g.STARS_EARNED,
+                g.MOVE_COUNT,
+                ROUND((g.COMPLETED_AT - g.START_TIME) * 86400) as time_seconds,
+                ROW_NUMBER() OVER(
+                    PARTITION BY g.USER_ID
+                    ORDER BY
+                        g.MOVE_COUNT ASC,
+                        (g.COMPLETED_AT - g.START_TIME) ASC
+                ) as rn
+            FROM
+                GAMES g
+            WHERE
+                g.CHALLENGE_ID = l_challenge_id
+                AND g.STATUS = 'SOLVED'
+        )
+        SELECT
+            JSON_ARRAYAGG(
+                JSON_OBJECT(
+                    'rank'      VALUE ROWNUM,
+                    'user'      VALUE u.USERNAME,
+                    'stars'     VALUE pba.STARS_EARNED,
+                    'moves'     VALUE pba.MOVE_COUNT,
+                    'time'      VALUE pba.time_seconds
+                )
+                ORDER BY pba.MOVE_COUNT ASC, pba.time_seconds ASC
+                RETURNING CLOB
+            )
+        INTO l_json
+        FROM player_best_attempts pba
+        JOIN USERS u ON pba.USER_ID = u.USER_ID
+        WHERE pba.rn = 1;
+
+        RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'));
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RETURN '{"leaderboard": []}';
+    END get_daily_leaderboard;
     
 END GAME_MANAGER_PKG;
