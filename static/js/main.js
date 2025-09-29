@@ -190,7 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // === UI Module: Handles all DOM manipulation ===
     const ui = {
         formatTime: (totalSeconds) => {
-            if (!totalSeconds || totalSeconds === 0) return '—';
+            if (!totalSeconds || totalSeconds === 0) return '--:--';
             const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
             const seconds = String(totalSeconds % 60).padStart(2, '0');
             return `${minutes}:${seconds}`;
@@ -450,8 +450,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 const row = document.createElement('tr');
                 const maxLength = 17;
                 const truncatedUsername = player.user.length > maxLength ? player.user.slice(0, maxLength) + '...' : player.user;
+
+                let place = '';
+                if (index === 0) {
+                    place = '<span><i class="fas fa-trophy" style="color: gold;"></i></span>';
+                } else if (index === 1) {
+                    place = '<span><i class="fas fa-medal" style="color: silver;"></i></span>';
+                } else if (index === 2) {
+                    place = '<span><i class="fas fa-medal" style="color: #cd7f32;"></i></span>';
+                } else {
+                    place = '#'+(index + 1).toString();
+                }
+
                 row.innerHTML = `
-                    <td>${index + 1}</td>
+                    <td>${place}</td>
                     <td>${truncatedUsername}</td>
                     <td><span class="star-count">${player.total_stars}</span> <i class="fas fa-star gold-star"></i></td>
                     <td>${player.solved_games}</td>

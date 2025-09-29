@@ -538,81 +538,80 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     ----------------------------------------------------------------------------
     -- РЕАЛИЗАЦИЯ: БЛОК ПОДСКАЗОК, РЕЙТИНГОВ И ИЗОБРАЖЕНИЙ
     ----------------------------------------------------------------------------
-    FUNCTION get_leaderboards(
-        p_filter_size       IN NUMBER,
-        p_filter_difficulty IN NUMBER
-    ) RETURN CLOB
-    AS
-        l_json  CLOB;
-        l_query VARCHAR2(4000);
-    BEGIN
-        -- Основной запрос, который объединяет пользователей с двумя подзапросами:
-        -- ss (solved_stats) - статистика по решенным играм
-        -- us (unfinished_stats) - статистика по незавершенным играм
-        l_query := '
-            SELECT JSON_ARRAYAGG(
-                JSON_OBJECT(
-                    ''user''             VALUE u.USERNAME,
-                    ''total_stars''      VALUE NVL(ss.total_stars, 0),
-                    ''solved_games''     VALUE NVL(ss.solved_games, 0),
-                    ''unfinished_games'' VALUE NVL(us.unfinished_games, 0)
-                ) ORDER BY NVL(ss.total_stars, 0) DESC, NVL(ss.solved_games, 0) DESC
-                RETURNING CLOB
-            )
-            FROM USERS u
-            LEFT JOIN (
+FUNCTION get_leaderboards(
+    p_filter_size       IN NUMBER,
+    p_filter_difficulty IN NUMBER
+) RETURN CLOB
+AS
+    l_json  CLOB;
+    l_query VARCHAR2(4000);
+BEGIN
+    l_query := '
+        SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+                ''user''             VALUE u.USERNAME,
+                ''total_stars''      VALUE NVL(ss.total_stars, 0),
+                ''solved_games''     VALUE NVL(ss.solved_games, 0),
+                ''unfinished_games'' VALUE NVL(us.unfinished_games, 0)
+            ) ORDER BY NVL(ss.total_stars, 0) DESC, NVL(ss.solved_games, 0) DESC, u.USERNAME ASC
+            RETURNING CLOB
+        )
+        FROM USERS u
+        LEFT JOIN (
+            SELECT
+                s.USER_ID,
+                SUM(s.STARS_EARNED) as total_stars,
+                COUNT(s.GAME_ID) as solved_games
+            FROM (
                 SELECT
-                    s.USER_ID,
-                    SUM(s.STARS_EARNED) as total_stars,
-                    COUNT(s.GAME_ID) as solved_games
-                FROM (
-                    SELECT
-                        USER_ID, GAME_ID, STARS_EARNED,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY USER_ID, COALESCE(TO_CHAR(CHALLENGE_ID), INITIAL_BOARD_STATE)
-                            ORDER BY STARS_EARNED DESC NULLS LAST, COMPLETED_AT ASC
-                        ) as rn
-                    FROM GAMES
-                    WHERE STATUS = ''SOLVED''';
-
-        -- Добавляем фильтры в первый подзапрос
-        IF p_filter_size > 0 THEN l_query := l_query || ' AND BOARD_SIZE = :size1'; END IF;
-        IF p_filter_difficulty > 0 THEN l_query := l_query || ' AND SHUFFLE_MOVES = :diff1'; END IF;
-
-        l_query := l_query || '
-                ) s
-                WHERE s.rn = 1
-                GROUP BY s.USER_ID
-            ) ss ON u.USER_ID = ss.USER_ID
-            LEFT JOIN (
-                SELECT
-                    USER_ID,
-                    COUNT(GAME_ID) as unfinished_games
+                    USER_ID, GAME_ID, STARS_EARNED,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY USER_ID, COALESCE(TO_CHAR(CHALLENGE_ID), INITIAL_BOARD_STATE)
+                        ORDER BY STARS_EARNED DESC NULLS LAST, COMPLETED_AT ASC
+                    ) as rn
                 FROM GAMES
-                WHERE STATUS IN (''ABANDONED'', ''TIMEOUT'')';
+                WHERE STATUS = ''SOLVED''';
 
-        -- Добавляем фильтры во второй подзапрос
-        IF p_filter_size > 0 THEN l_query := l_query || ' AND BOARD_SIZE = :size2'; END IF;
-        IF p_filter_difficulty > 0 THEN l_query := l_query || ' AND SHUFFLE_MOVES = :diff2'; END IF;
+    -- Добавляем фильтры в первый подзапрос
+    IF p_filter_size > 0 THEN l_query := l_query || ' AND BOARD_SIZE = :size1'; END IF;
+    IF p_filter_difficulty > 0 THEN l_query := l_query || ' AND SHUFFLE_MOVES = :diff1'; END IF;
 
-        l_query := l_query || '
-                GROUP BY USER_ID
-            ) us ON u.USER_ID = us.USER_ID
-            GROUP BY u.USERNAME';
+    l_query := l_query || '
+            ) s
+            WHERE s.rn = 1
+            GROUP BY s.USER_ID
+        ) ss ON u.USER_ID = ss.USER_ID
+        LEFT JOIN (
+            SELECT
+                USER_ID,
+                COUNT(GAME_ID) as unfinished_games
+            FROM GAMES
+            WHERE STATUS IN (''ABANDONED'', ''TIMEOUT'')';
 
-        -- Логика выполнения динамического запроса с правильной передачей параметров
-        IF p_filter_size > 0 AND p_filter_difficulty > 0 THEN
-            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_difficulty, p_filter_size, p_filter_difficulty;
-        ELSIF p_filter_size > 0 THEN
-            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_size;
-        ELSIF p_filter_difficulty > 0 THEN
-            EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_difficulty, p_filter_difficulty;
-        ELSE
-            EXECUTE IMMEDIATE l_query INTO l_json;
-        END IF;
+    -- Добавляем фильтры во второй подзапрос
+    IF p_filter_size > 0 THEN l_query := l_query || ' AND BOARD_SIZE = :size2'; END IF;
+    IF p_filter_difficulty > 0 THEN l_query := l_query || ' AND SHUFFLE_MOVES = :diff2'; END IF;
 
-        RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'));
-    END get_leaderboards;
+    l_query := l_query || '
+            GROUP BY USER_ID
+        ) us ON u.USER_ID = us.USER_ID';
+
+    -- Логика выполнения динамического запроса
+    IF p_filter_size > 0 AND p_filter_difficulty > 0 THEN
+        EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_difficulty, p_filter_size, p_filter_difficulty;
+    ELSIF p_filter_size > 0 THEN
+        EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_size;
+    ELSIF p_filter_difficulty > 0 THEN
+        EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_difficulty, p_filter_difficulty;
+    ELSE
+        EXECUTE IMMEDIATE l_query INTO l_json;
+    END IF;
+
+    RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'));
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN '{"leaderboard": []}';
+END get_leaderboards;
     
     FUNCTION get_game_history(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB
     AS
