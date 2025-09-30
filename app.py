@@ -190,6 +190,9 @@ def handle_action():
         elif action == 'restart':
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.restart_game', oracledb.DB_TYPE_CLOB, [game_session_id])
             
+        elif action == 'get_daily_leaderboard':
+            result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_daily_leaderboard', oracledb.DB_TYPE_CLOB)
+                        
         else:
             return jsonify({"error": "Unknown action"}), 400
 

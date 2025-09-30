@@ -1,5 +1,3 @@
-ALTER SESSION SET CONTAINER = XEPDB1;
-
 CREATE USER PUZZLEGAME IDENTIFIED BY qwertylf1;
 
 -- Право на подключение к БД

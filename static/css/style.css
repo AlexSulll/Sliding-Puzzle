@@ -188,24 +188,57 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 #leaderboard-tables::-webkit-scrollbar-thumb, #history-table-container::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
 #leaderboard-tables::-webkit-scrollbar-thumb:hover, #history-table-container::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
 
-.rating-icon {
-    font-size: 1.5em;
+/* #daily-leaderboard-container {
+    max-height: 50vh;
+    overflow-y: auto;
+    overflow-x: auto;
+    border-radius: 15px;
+    margin-top: 15px;
+    border: 1px solid var(--border-color);
+    padding: 10px;
+} */
+
+#daily-leaderboard-container table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    background-color: var(--container-bg);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    min-width: 400px;
 }
 
-.rating-icon.gold {
-    color: gold;
-    opacity: 0.7;
+#daily-leaderboard-container thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background-color: #5a67d8;
+    color: white;
+    font-weight: 600;
+    padding: 12px 15px;
+    text-align: center;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
 }
 
-.rating-icon.silver {
-    color: silver;
+#daily-leaderboard-container td {
+    padding: 12px 15px;
+    text-align: center;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-color);
+    white-space: nowrap;
 }
 
-.rating-icon.bronze {
-    color: #cd7f32;
+#daily-leaderboard-container tr:last-child td {
+    border-bottom: none;
 }
 
-/* Стилизация золотой звездочки */
+#daily-leaderboard-container tr:hover {
+    background-color: #f7fafc;
+}
+
 .gold-star {
     color: var(--warning-color);
     font-size: 0.9em;
