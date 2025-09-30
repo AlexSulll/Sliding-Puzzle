@@ -540,6 +540,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const table = document.createElement('table');
             table.className = 'leaderboard-table';
+            container.innerHTML = '';
             table.innerHTML = `
                 <thead>
                     <tr>
