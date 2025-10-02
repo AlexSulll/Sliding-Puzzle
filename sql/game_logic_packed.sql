@@ -19,6 +19,8 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_password_hash IN VARCHAR2
     ) RETURN CLOB;
 
+    PROCEDURE update_last_seen(p_user_id IN USERS.USER_ID%TYPE);
+
     PROCEDURE cleanup_expired_games;
 
     FUNCTION check_active_session (
@@ -199,8 +201,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             RETURN '{"success": false, "message": "Пользователь с таким именем уже существует."}';
         END IF;
 
-        INSERT INTO USERS (USER_ID, USERNAME, PASSWORD_HASH)
-        VALUES (USERS_SEQ.NEXTVAL, p_username, p_password_hash)
+        INSERT INTO USERS (USER_ID, USERNAME, PASSWORD_HASH, LAST_SEEN)
+        VALUES (USERS_SEQ.NEXTVAL, p_username, p_password_hash, SYSDATE)
         RETURNING USER_ID INTO l_user_id;
 
         COMMIT;
@@ -220,6 +222,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     BEGIN
         SELECT USER_ID INTO l_user_id FROM USERS WHERE USERNAME = p_username AND PASSWORD_HASH = p_password_hash;
 
+        update_last_seen(p_user_id => l_user_id);
+
         RETURN JSON_OBJECT(
             'success' VALUE true, 
             'user' VALUE JSON_OBJECT( 'id' VALUE l_user_id, 'name' VALUE p_username )
@@ -228,6 +232,16 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         WHEN NO_DATA_FOUND THEN
             RETURN '{"success": false, "message": "Неверное имя пользователя или пароль."}';
     END login_user;
+
+    PROCEDURE update_last_seen(p_user_id IN USERS.USER_ID%TYPE)
+    AS
+    BEGIN
+        UPDATE USERS SET LAST_SEEN = SYSDATE WHERE USER_ID = p_user_id;
+        COMMIT;
+    EXCEPTION
+        WHEN OTHERS THEN
+            NULL; -- Ошибки здесь не критичны, просто игнорируем
+    END update_last_seen;
 
     ----------------------------------------------------------------------------
     -- РЕАЛИЗАЦИЯ: БЛОК УПРАВЛЕНИЯ ИГРОЙ
@@ -556,7 +570,12 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                     ''user''             VALUE u.USERNAME,
                     ''total_stars''      VALUE NVL(ss.total_stars, 0),
                     ''solved_games''     VALUE NVL(ss.solved_games, 0),
-                    ''unfinished_games'' VALUE NVL(us.unfinished_games, 0)
+                    ''unfinished_games'' VALUE NVL(us.unfinished_games, 0),
+                    ''online_status''    VALUE CASE WHEN u.LAST_SEEN > SYSDATE - (5 / (24 * 60)) THEN ''online'' ELSE ''offline'' END,
+                    ''last_seen_text''   VALUE CASE
+                                              WHEN u.LAST_SEEN > SYSDATE - (5 / (24 * 60)) THEN ''В сети''
+                                              ELSE ''был(а) '' || TO_CHAR(u.LAST_SEEN, ''DD.MM HH24:MI'')
+                                           END
                 ) ORDER BY NVL(ss.total_stars, 0) DESC, NVL(ss.solved_games, 0) DESC, u.USERNAME ASC
                 RETURNING CLOB
             )
@@ -1264,7 +1283,13 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                     'user'      VALUE u.USERNAME,
                     'stars'     VALUE pba.STARS_EARNED,
                     'moves'     VALUE pba.MOVE_COUNT,
-                    'time'      VALUE pba.time_seconds
+                    'time'      VALUE pba.time_seconds,
+                    'online_status' VALUE CASE WHEN u.LAST_SEEN > SYSDATE - (5 / (24 * 60)) THEN 'online' ELSE 'offline' END,
+                    'last_seen_text'  VALUE CASE
+                                           WHEN u.LAST_SEEN > SYSDATE - (5 / (24 * 60)) THEN 'В сети'
+                                           WHEN u.LAST_SEEN IS NULL THEN 'нет данных'
+                                           ELSE 'был(а) ' || TO_CHAR(u.LAST_SEEN, 'DD.MM HH24:MI')
+                                        END
                 )
                 ORDER BY pba.MOVE_COUNT ASC, pba.time_seconds ASC
                 RETURNING CLOB

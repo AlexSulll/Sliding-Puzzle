@@ -441,6 +441,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <tr>
                         <th>Место</th>
                         <th>Игрок</th>
+                        <th>Статус</th>
                         <th>Звёзды</th>
                         <th>Решено</th>
                         <th>Не завершено</th>
@@ -455,20 +456,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const maxLength = 17;
                 const truncatedUsername = player.user.length > maxLength ? player.user.slice(0, maxLength) + '...' : player.user;
 
-                let place = '';
-                if (index === 0) {
-                    place = '<span><i class="fas fa-trophy rating-icon gold"></i></span>';
-                } else if (index === 1) {
-                    place = '<span><i class="fas fa-medal rating-icon silver"></i></span>';
-                } else if (index === 2) {
-                    place = '<span><i class="fas fa-medal rating-icon bronze"></i></span>';
-                } else {
-                    place = '#'+(index + 1).toString();
-                }
+                const place = ['🏆', '🥈', '🥉'][index] || `#${index + 1}`;
+
+                const statusHtml = `
+                    <span class="status-indicator ${player.online_status}"></span>
+                    <span class="last-seen-text">${player.last_seen_text}</span>`;
 
                 row.innerHTML = `
                     <td>${place}</td>
                     <td>${truncatedUsername}</td>
+                    <td class="player-status">${statusHtml}</td>
                     <td><span class="star-count">${player.total_stars}</span> <i class="fas fa-star gold-star"></i></td>
                     <td>${player.solved_games}</td>
                     <td>${player.unfinished_games}</td>
@@ -537,10 +534,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             container.appendChild(table);
         },
+        
         renderDailyLeaderboard: async () => {
             const data = await api.performAction('get_daily_leaderboard');
             const container = DOMElements.dailyLeaderboardContainer;
-            container.innerHTML = '<h3><i class="fas fa-trophy"></i> Рейтинг дня</h3>';
 
             if (!data || !data.leaderboard || data.leaderboard.length === 0) {
                 container.innerHTML += '<p><i>Сегодня еще никто не прошел челлендж. Будьте первым!</i></p>';
@@ -549,14 +546,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const table = document.createElement('table');
             table.className = 'leaderboard-table';
+            container.innerHTML = '';
             table.innerHTML = `
                 <thead>
                     <tr>
                         <th>Место</th>
                         <th>Игрок</th>
+                        <th>Статус</th>
                         <th>Ходы</th>
                         <th>Время</th>
-                        <th>Звёзды</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -565,14 +563,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
             data.leaderboard.forEach((player, index) => {
                 const row = document.createElement('tr');
-                const place = ['🥇', '🥈', '🥉'][index] || `#${index + 1}`;
+                const place = ['<span class="trophy-icon">🏆</span>', 
+                            '<span class="trophy-icon">🥈</span>', 
+                            '<span class="trophy-icon">🥉</span>'][index] || `#${index + 1}`;
                 
+                const statusHtml = `
+                    <span class="status-indicator ${player.online_status}"></span>
+                    <span class="last-seen-text">${player.last_seen_text}</span>`;
+
                 row.innerHTML = `
                     <td>${place}</td>
                     <td>${player.user}</td>
+                    <td class="player-status">${statusHtml}</td>
                     <td><strong>${player.moves}</strong></td>
                     <td>${ui.formatTime(player.time)}</td>
-                    <td>${'★'.repeat(player.stars)}</td>
                 `;
                 tbody.appendChild(row);
             });

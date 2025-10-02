@@ -98,6 +98,9 @@ def handle_action():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        if 'user_id' in session:
+            cursor.callproc('GAME_MANAGER_PKG.update_last_seen', [session.get('user_id')])
+            
         result_clob = None
         user_id = session.get('user_id')
         game_session_id = session.get('game_session_id') or params.get('sessionId')
