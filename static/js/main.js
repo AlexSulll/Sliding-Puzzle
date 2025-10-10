@@ -441,6 +441,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <tr>
                         <th>Место</th>
                         <th>Игрок</th>
+                        <th>Статус</th>
                         <th>Звёзды</th>
                         <th>Решено</th>
                         <th>Не завершено</th>
@@ -457,9 +458,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const place = ['🏆', '🥈', '🥉'][index] || `#${index + 1}`;
 
+                const statusHtml = `
+                    <span class="status-indicator ${player.online_status}"></span>
+                    <span class="last-seen-text">${player.last_seen_text}</span>`;
+
                 row.innerHTML = `
-                    <td>${place}</td>
+                    <td><span class="trophy-place">${place}</span></td>
                     <td>${truncatedUsername}</td>
+                    <td class="player-status">${statusHtml}</td>
                     <td><span class="star-count">${player.total_stars}</span> <i class="fas fa-star gold-star"></i></td>
                     <td>${player.solved_games}</td>
                     <td>${player.unfinished_games}</td>
@@ -510,9 +516,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     statusText = game.stars > 0 ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` : 'Решено';
                 } else if (game.status === 'ABANDONED') {
                     statusText = '<span class="status-abandoned">Сдался</span>';
+                    timeStr = '--:--';
+                    moves='-';
                 } else if (game.status === 'TIMEOUT') {
                     statusText = '<span class="status-timeout">Время вышло</span>';
-                    timeStr = '--:--'
+                    timeStr = '--:--';
+                    moves='-';
                 }
 
                 const row = document.createElement('tr');
@@ -546,6 +555,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <tr>
                         <th>Место</th>
                         <th>Игрок</th>
+                        <th>Статус</th>
                         <th>Ходы</th>
                         <th>Время</th>
                     </tr>
@@ -560,9 +570,14 @@ document.addEventListener('DOMContentLoaded', () => {
                             '<span class="trophy-icon">🥈</span>', 
                             '<span class="trophy-icon">🥉</span>'][index] || `#${index + 1}`;
                 
+                const statusHtml = `
+                    <span class="status-indicator ${player.online_status}"></span>
+                    <span class="last-seen-text">${player.last_seen_text}</span>`;
+
                 row.innerHTML = `
                     <td>${place}</td>
                     <td>${player.user}</td>
+                    <td class="player-status">${statusHtml}</td>
                     <td><strong>${player.moves}</strong></td>
                     <td>${ui.formatTime(player.time)}</td>
                 `;
