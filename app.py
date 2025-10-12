@@ -274,5 +274,6 @@ def get_image_data(image_id):
 def request_entity_too_large(error):
     return jsonify({"success": False, "error": "Файл слишком большой. Максимальный размер - 5 МБ."}), 413
 
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
