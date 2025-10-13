@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
         isDaily: false,
         currentBoardState: [],
         boardSize: 0,
+        isLoading: false,
     };
 
     const DOMElements = {
@@ -73,12 +74,24 @@ document.addEventListener('DOMContentLoaded', () => {
         userStatsPanel: document.getElementById('user-stats-panel'),
         statsUsername: document.getElementById('stats-username'),
         restartBtn: document.getElementById('restart-btn'),
-        progressCounter: document.getElementById('progress-counter')
+        progressCounter: document.getElementById('progress-counter'),
+        loadingOverlay: document.getElementById('loading-overlay'),
+        loadingText: document.getElementById('loading-text')
     };
 
     // === API Module: Simplified with a single action endpoint ===
     const api = {
-        async call(endpoint, options = {}) {
+        async call(endpoint, options = {}, loadingMessage) {
+            if (state.isLoading) {
+                console.warn("Предыдущий запрос еще выполняется.");
+                return;
+            }
+
+            state.isLoading = true;
+            if (loadingMessage) {
+                ui.showLoader(loadingMessage);
+            }
+
             try {
                 const response = await fetch(endpoint, options);
                 if (!response.ok) {
@@ -91,9 +104,12 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (error) {
                 console.error(`API call to ${endpoint} failed:`, error);
                 if (DOMElements.authScreen.classList.contains('active')) { DOMElements.authError.textContent = error.message; } else { alert(`An error occurred: ${error.message}`); }
+            } finally {
+                state.isLoading = false;
+                ui.hideLoader(); // Гарантированно скрываем загрузчик после завершения запроса
             }
         },
-        performAction: (action, params = {}) => api.call('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, params }), }),
+        performAction: (action, params = {}, loadingMessage) => api.call('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, params }), }, loadingMessage),
         register: (username, passwordHash) => api.call('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, passwordHash }) }),
         login: (username, passwordHash) => api.call('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, passwordHash }) }),
         logout: () => api.call('/api/auth/logout', { method: 'POST' }),
@@ -129,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 replayGameId: replayGameId
             };
             
-            const gameState = await api.performAction('start', settings);
+            const gameState = await api.performAction('start', settings, 'Генерация игры...'); // <-- Добавляем текст
 
             if (gameState && gameState.imageMissing) {
                 const choiceStandard = confirm("Картинка для этой игры была удалена. Хотите выбрать стандартную картинку?");
@@ -181,14 +197,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 timer.start(gameState.startTime, size);
             }
         },
-        move: async (tileValue) => { const gameState = await api.performAction('move', { tile: tileValue }); if (gameState) ui.render(gameState); },
-        undo: async () => { const gameState = await api.performAction('undo'); if (gameState) ui.render(gameState); },
-        redo: async () => { const gameState = await api.performAction('redo'); if (gameState) ui.render(gameState); },
+        move: async (tileValue) => { 
+            // Для ходов сообщение можно сделать коротким или не показывать вовсе, если они быстрые
+            const gameState = await api.performAction('move', { tile: tileValue }, 'Обработка хода...'); 
+            if (gameState) ui.render(gameState); 
+        },
+        undo: async () => { 
+            const gameState = await api.performAction('undo', {}, 'Отмена хода...'); // <-- Пример
+            if (gameState) ui.render(gameState); 
+        },
+        redo: async () => { 
+            const gameState = await api.performAction('redo', {}, 'Возврат хода...'); // <-- Пример
+            if (gameState) ui.render(gameState); 
+        },
         abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.showScreen('settings'); },
         playAgain: () => { timer.stop(); ui.showScreen('settings'); setTimeout(() => { ui.refreshUserData(); }, 500);},
         hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
         timeout: async () => { await api.performAction('timeout'); timer.stop(); ui.showScreen('settings'); },
-        restart: async () => { const gameState = await api.performAction('restart'); if (gameState) { timer.stop(); ui.render(gameState); timer.start(gameState.startTime, state.boardSize); } },
+        restart: async () => { 
+            const gameState = await api.performAction('restart', {}, 'Перезапуск игры...'); // <-- Пример
+            if (gameState) { timer.stop(); ui.render(gameState); timer.start(gameState.startTime, state.boardSize); } 
+        },
     };
     
     // === UI Module: Handles all DOM manipulation ===
@@ -200,6 +229,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return `${minutes}:${seconds}`;
         },
         
+        showLoader: (message = 'Загрузка...') => {
+            DOMElements.loadingText.textContent = message;
+            DOMElements.loadingOverlay.classList.remove('hidden');
+        },
+
+        hideLoader: () => {
+            DOMElements.loadingOverlay.classList.add('hidden');
+        },
+
         renderUserStats: async () => {
             return ui.refreshUserData();
         },
