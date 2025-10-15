@@ -88,8 +88,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             state.isLoading = true;
+            let loaderTimeout = null;
+
             if (loadingMessage) {
-                ui.showLoader(loadingMessage);
+                loaderTimeout = setTimeout(() => {
+                    ui.showLoader(loadingMessage);
+                }, 500); // 500ms = 0.5 секунды
             }
 
             try {
@@ -105,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error(`API call to ${endpoint} failed:`, error);
                 if (DOMElements.authScreen.classList.contains('active')) { DOMElements.authError.textContent = error.message; } else { alert(`An error occurred: ${error.message}`); }
             } finally {
+                clearTimeout(loaderTimeout);
                 state.isLoading = false;
                 ui.hideLoader(); // Гарантированно скрываем загрузчик после завершения запроса
             }
