@@ -932,7 +932,12 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 'imageUrl'   VALUE l_image_url,
                 'stars'      VALUE l_game.STARS_EARNED,
                 'gameMode'   VALUE l_game.GAME_MODE,
-                'progress'   VALUE l_progress -- <-- НОВОЕ ПОЛЕ
+                'progress'   VALUE l_progress,
+                'duration'   VALUE CASE 
+                                WHEN l_game.STATUS = 'SOLVED' 
+                                THEN ROUND((l_game.COMPLETED_AT - l_game.START_TIME) * 86400) 
+                                ELSE NULL 
+                            END
             )
         INTO l_json_clob
         FROM dual;

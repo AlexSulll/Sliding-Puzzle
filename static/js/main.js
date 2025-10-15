@@ -417,7 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (status === 'SOLVED') {
                 timer.stop();
                 DOMElements.winMoves.textContent = moves;
-                const timeElapsed = Math.floor((new Date() - state.startTime) / 1000);
+                const timeElapsed = gameState.duration;
                 DOMElements.winTime.textContent = ui.formatTime(timeElapsed);
                 DOMElements.winStars.innerHTML = (stars > 0) ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : 'Решено';
                 DOMElements.activeGameView.classList.add('hidden');
@@ -577,8 +577,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await api.performAction('get_daily_leaderboard');
             const container = DOMElements.dailyLeaderboardContainer;
 
+            container.innerHTML = ''; 
+            
             if (!data || !data.leaderboard || data.leaderboard.length === 0) {
-                container.innerHTML += '<p><i>Сегодня еще никто не прошел челлендж. Будьте первым!</i></p>';
+                container.innerHTML = '<p><i>Сегодня еще никто не прошел челлендж. Будьте первым!</i></p>';
                 return;
             }
 
