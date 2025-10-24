@@ -3,8 +3,8 @@ import oracledb
 import json
 import hashlib
 from flask import Flask, request, jsonify, render_template, session, Response
-from werkzeug.utils import secure_filename # <-- ДОБАВИТЬ
-import uuid # <-- ДОБАВИТЬ
+from werkzeug.utils import secure_filename
+import uuid
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -19,9 +19,9 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # --- Подключение к базе данных ---
-DB_USER = "PUZZLEGAME"
-DB_PASSWORD = "qwertylf1"
-DB_DSN = "localhost:1521/XEPDB1"
+DB_USER = "KC2203_20"
+DB_PASSWORD = "KC2203_20"
+DB_DSN = "10.22.10.49:1521/ORCL"
 pool = oracledb.create_pool(user=DB_USER, password=DB_PASSWORD, dsn=DB_DSN, min=2, max=5, increment=1)
 
 def get_db_connection():
@@ -31,11 +31,9 @@ def get_db_connection():
 def index():
     return render_template('index.html')
 
-# --- Эндпоинты авторизации ---
 @app.route('/api/auth/register', methods=['POST'])
 def register():
-    # ИЗМЕНЕНО: Логика формирования JSON перенесена в БД.
-    # Python теперь только вызывает функцию и устанавливает сессию при успехе.
+
     data = request.json
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -54,8 +52,7 @@ def register():
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
-    # ИЗМЕНЕНО: Логика формирования JSON перенесена в БД.
-    # Python теперь только вызывает функцию и устанавливает сессию при успехе.
+
     data = request.json
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -74,18 +71,15 @@ def login():
 
 @app.route('/api/auth/logout', methods=['POST'])
 def logout():
-    # НЕ ИЗМЕНЕНО: Логика сессии остается в Python.
     session.clear()
     return jsonify({"success": True})
 
 @app.route('/api/auth/status', methods=['GET'])
 def status():
-    # НЕ ИЗМЕНЕНО: Логика сессии остается в Python.
     if 'user_id' in session:
         return jsonify({"isLoggedIn": True, "user": {"id": session['user_id'], "name": session['username']}})
     return jsonify({"isLoggedIn": False})
 
-# --- Универсальный обработчик игровых действий ---
 @app.route('/api/action', methods=['POST'])
 def handle_action():
     if 'user_id' not in session and request.json.get('action') not in ['get_default_images']:
@@ -113,7 +107,7 @@ def handle_action():
                     params.get('size'),
                     params.get('difficulty'),
                     params.get('gameMode'),
-                    image_id, # <-- Теперь здесь всегда будет правильный ID или None
+                    image_id,
                     params.get('isDailyChallenge'),
                     params.get('forceNew'),
                     params.get('replayGameId')
@@ -139,19 +133,16 @@ def handle_action():
         
         elif action == 'redo':
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.redo_move', oracledb.DB_TYPE_CLOB, [game_session_id])
-        
-        # ИЗМЕНЕНО: abandon_game теперь функция, возвращающая JSON.
+
         elif action == 'abandon':
             result_json_str = cursor.callfunc('GAME_MANAGER_PKG.abandon_game', str, [game_session_id])
             session.pop('game_session_id', None)
             return result_json_str, 200, {'Content-Type': 'application/json'}
-        
-        # ИЗМЕНЕНО: timeout_game теперь функция (хотя в пакете ее еще нужно будет поменять с процедуры).
+
         elif action == 'timeout':
-            # Предполагаем, что timeout_game тоже станет функцией
-            cursor.callproc('GAME_MANAGER_PKG.timeout_game', [game_session_id]) # Пока оставим callproc, если не меняли
+            cursor.callproc('GAME_MANAGER_PKG.timeout_game', [game_session_id])
             session.pop('game_session_id', None)
-            return jsonify({"success": True}) # или возвращаем результат callfunc
+            return jsonify({"success": True})
         
         elif action == 'hint':
             result_json_str = cursor.callfunc('GAME_MANAGER_PKG.get_hint', str, [game_session_id])
@@ -182,8 +173,7 @@ def handle_action():
 
         elif action == 'get_user_stats':
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_user_stats', oracledb.DB_TYPE_CLOB, [user_id])
-            
-        # ИЗМЕНЕНО: delete_image теперь функция, возвращающая JSON.
+
         elif action == 'delete_image':
             image_id_to_delete = params.get('imageId')
             if image_id_to_delete:
@@ -207,7 +197,6 @@ def handle_action():
         if conn:
             pool.release(conn)
 
-# --- Эндпоинты для работы с изображениями (BLOB) ---
 @app.route('/api/upload-image', methods=['POST'])
 def upload_image():
     if 'user_id' not in session: return jsonify({'error': 'Not authorized'}), 401
@@ -220,22 +209,18 @@ def upload_image():
         mime_type = file.mimetype
         image_hash = hashlib.sha256(image_data).hexdigest().upper()
 
-        # Создаем безопасное и уникальное имя файла
         filename = secure_filename(file.filename)
         unique_filename = f"{uuid.uuid4().hex}_{filename}"
-        
-        # Сохраняем файл на сервере
+
         file_save_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
         with open(file_save_path, "wb") as f:
             f.write(image_data)
-            
-        # Этот путь будет сохранен в БД
+
         path_for_db = f"/uploads/{unique_filename}"
 
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            # Вызываем измененную функцию из пакета
             result_json_str = cursor.callfunc(
                 'GAME_MANAGER_PKG.save_user_image', 
                 str, 
@@ -255,15 +240,13 @@ def get_image_data(image_id):
     try:
         mime_type_var = cursor.var(str)
         image_data_var = cursor.var(oracledb.DB_TYPE_BLOB)
-        
-        # Вызываем процедуру ТОЛЬКО для стандартных изображений
+
         cursor.callproc("GAME_MANAGER_PKG.get_default_image_data", [image_id, mime_type_var, image_data_var])
         
         image_bytes_lob = image_data_var.getvalue()
         if image_bytes_lob and image_bytes_lob.size() > 0:
             return Response(image_bytes_lob.read(), mimetype=mime_type_var.getvalue())
-        
-        # Если ничего не найдено
+
         return "Image not found", 404
             
     finally:
@@ -276,4 +259,4 @@ def request_entity_too_large(error):
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='127.0.0.1', port=5000, debug=True)
