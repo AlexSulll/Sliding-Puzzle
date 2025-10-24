@@ -175,7 +175,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     
     FUNCTION get_target_state(p_size IN NUMBER) RETURN VARCHAR2
     IS
-        l_target_state VARCHAR2(1000) := '';
+        l_target_state VARCHAR2(120) := '';
     BEGIN
         FOR i IN 1..(p_size*p_size - 1) LOOP 
             l_target_state := l_target_state || i || ','; 
@@ -240,7 +240,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         COMMIT;
     EXCEPTION
         WHEN OTHERS THEN
-            NULL; -- Ошибки здесь не критичны, просто игнорируем
+            NULL;
     END update_last_seen;
 
     ----------------------------------------------------------------------------
@@ -296,7 +296,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     ) RETURN CLOB
     AS
         l_game_id             GAMES.GAME_ID%TYPE;
-        l_start_state         VARCHAR2(1000);
+        l_start_state         VARCHAR2(120);
         l_size                NUMBER := p_board_size;
         l_shuffles            NUMBER := p_shuffle_moves;
         l_challenge_id        GAMES.CHALLENGE_ID%TYPE := NULL;
@@ -354,7 +354,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         ELSE
             -- Логика обычной игры
             DECLARE 
-                l_target_state VARCHAR2(1000); 
+                l_target_state VARCHAR2(120); 
             BEGIN 
                 l_target_state := get_target_state(l_size);
                 l_start_state := shuffle_board(l_target_state, l_shuffles, l_size);
@@ -417,7 +417,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     FUNCTION restart_game(p_session_id IN GAMES.GAME_ID%TYPE) RETURN CLOB
     AS
         l_game GAMES%ROWTYPE;
-        l_initial_state VARCHAR2(1000);
+        l_initial_state VARCHAR2(120);
     BEGIN
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id;
         l_initial_state := l_game.INITIAL_BOARD_STATE;
@@ -436,7 +436,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         
         COMMIT;
         
-        -- Возвращаем обновленное состояние игры
         RETURN get_game_state_json(p_session_id);
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
@@ -454,9 +453,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_empty_idx         PLS_INTEGER; 
         l_tile_idx          PLS_INTEGER; 
         l_is_adjacent       BOOLEAN := FALSE; 
-        l_new_board_state   VARCHAR2(1000); 
+        l_new_board_state   VARCHAR2(120); 
         l_stars             NUMBER := 0;
-        l_target_state      VARCHAR2(1000); 
+        l_target_state      VARCHAR2(120); 
     BEGIN 
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id AND STATUS = 'ACTIVE'; 
         
@@ -471,8 +470,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             IF l_board(i) = p_tile_value THEN l_tile_idx := i; END IF; 
         END LOOP; 
         
-        IF (ABS(l_tile_idx - l_empty_idx) = 1 AND TRUNC((l_tile_idx-1)/l_game.BOARD_SIZE) = TRUNC((l_empty_idx-1)/l_game.BOARD_SIZE)) 
-            OR (ABS(l_tile_idx - l_empty_idx) = l_game.BOARD_SIZE) THEN 
+        IF (ABS(l_tile_idx - l_empty_idx) = 1 AND TRUNC((l_tile_idx-1)/l_game.BOARD_SIZE) = TRUNC((l_empty_idx-1)/l_game.BOARD_SIZE)) OR (ABS(l_tile_idx - l_empty_idx) = l_game.BOARD_SIZE) THEN 
             l_is_adjacent := TRUE; 
         END IF; 
         
@@ -494,8 +492,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 END IF; 
                 
                 UPDATE GAMES 
-                SET STATUS = 'SOLVED', MOVE_COUNT = l_game.MOVE_COUNT + 1, COMPLETED_AT = SYSDATE, 
-                    STARS_EARNED = l_stars, CURRENT_MOVE_ORDER = null
+                SET STATUS = 'SOLVED', MOVE_COUNT = l_game.MOVE_COUNT + 1, COMPLETED_AT = SYSDATE, STARS_EARNED = l_stars, CURRENT_MOVE_ORDER = null
                 WHERE GAME_ID = p_session_id; 
                 
                 DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
@@ -504,8 +501,14 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 
             ELSE 
                 DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id AND MOVE_ORDER > l_game.CURRENT_MOVE_ORDER; 
-                INSERT INTO MOVE_HISTORY (MOVE_ID, GAME_ID, MOVE_ORDER, BOARD_STATE) VALUES (MOVE_HISTORY_SEQ.NEXTVAL, p_session_id, l_game.CURRENT_MOVE_ORDER + 1, l_new_board_state); 
-                UPDATE GAMES SET MOVE_COUNT = l_game.MOVE_COUNT + 1, CURRENT_MOVE_ORDER = l_game.CURRENT_MOVE_ORDER + 1 WHERE GAME_ID = p_session_id; 
+                
+                INSERT INTO MOVE_HISTORY (
+                    MOVE_ID, GAME_ID, MOVE_ORDER, BOARD_STATE
+                ) VALUES (MOVE_HISTORY_SEQ.NEXTVAL, p_session_id, l_game.CURRENT_MOVE_ORDER + 1, l_new_board_state); 
+                
+                UPDATE GAMES 
+                SET MOVE_COUNT = l_game.MOVE_COUNT + 1, CURRENT_MOVE_ORDER = l_game.CURRENT_MOVE_ORDER + 1 
+                WHERE GAME_ID = p_session_id; 
             END IF; 
             COMMIT; 
         END IF; 
@@ -759,9 +762,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     ----------------------------------------------------------------------------
     FUNCTION get_hint(p_session_id IN GAMES.GAME_ID%TYPE) RETURN VARCHAR2 
     AS 
-        l_current_state VARCHAR2(1000); 
+        l_current_state VARCHAR2(120); 
         l_game          GAMES%ROWTYPE; 
-        l_target_state  VARCHAR2(1000); 
+        l_target_state  VARCHAR2(120); 
         l_tile_to_move  NUMBER; 
     BEGIN 
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id; 
@@ -784,11 +787,11 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     AS 
         l_board_size     NUMBER; 
         l_shuffle_moves  NUMBER; 
-        l_shuffled_board VARCHAR2(1000); 
+        l_shuffled_board VARCHAR2(120); 
         l_optimal_moves  NUMBER; 
         l_next_day       DATE := TRUNC(SYSDATE) + 1; 
         l_count          NUMBER; 
-        l_target_state   VARCHAR2(1000);
+        l_target_state   VARCHAR2(120);
     BEGIN 
         SELECT COUNT(*) INTO l_count FROM DAILY_CHALLENGES WHERE CHALLENGE_DATE = l_next_day; 
         IF l_count > 0 THEN RETURN; END IF; 
@@ -820,7 +823,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         p_size IN NUMBER
     ) RETURN VARCHAR2
     IS
-        l_shuffled_state VARCHAR2(1000);
+        l_shuffled_state VARCHAR2(120);
     BEGIN
         LOOP 
             DECLARE 
@@ -859,7 +862,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     AS
         l_json_clob             CLOB;
         l_game                  GAMES%ROWTYPE;
-        l_current_board_state   VARCHAR2(1000);
+        l_current_board_state   VARCHAR2(120);
         l_image_url             VARCHAR2(256);
         l_initial_optimal_moves NUMBER;
         l_current_optimal_moves NUMBER;
@@ -958,7 +961,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_initial_node  GAME_MANAGER_PKG.t_node;
         l_threshold     NUMBER;
         l_result        NUMBER;
-        l_target_state  VARCHAR2(1000) := '';
+        l_target_state  VARCHAR2(120) := '';
     BEGIN
         -- Формируем целевое (решенное) состояние доски
         FOR i IN 1..(p_board_size_param * p_board_size_param - 1) LOOP
