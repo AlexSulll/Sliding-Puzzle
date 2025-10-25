@@ -8,7 +8,6 @@ import uuid
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
@@ -19,9 +18,9 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # --- Подключение к базе данных ---
-DB_USER = "KC2203_20"
-DB_PASSWORD = "KC2203_20"
-DB_DSN = "10.22.10.49:1521/ORCL"
+DB_USER = "PUZZLEGAME"
+DB_PASSWORD = "qwertylf1"
+DB_DSN = "localhost:1521/XEPDB1"
 pool = oracledb.create_pool(user=DB_USER, password=DB_PASSWORD, dsn=DB_DSN, min=2, max=5, increment=1)
 
 def get_db_connection():

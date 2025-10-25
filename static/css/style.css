@@ -140,7 +140,7 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 .difficulty-btn.active i { color: var(--primary-color); }
 
 #image-selection { margin-top: 20px; }
-.image-previews { display: flex; gap: 10px; margin: 15px 0; justify-content: center; }
+.image-previews { display: flex; gap: 10px; margin: 15px 0; justify-content: center; flex-wrap: wrap; }
 .preview-img { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 3px solid transparent; transition: all 0.2s; }
 .preview-img.selected { border-color: var(--primary-color); transform: scale(1.1); }
 #custom-image-name { font-style: italic; color: #6c757d; margin-top: 10px; }

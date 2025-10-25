@@ -572,11 +572,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                     'total_stars'      VALUE NVL(ss.total_stars, 0),
                     'solved_games'     VALUE NVL(ss.solved_games, 0),
                     'unfinished_games' VALUE NVL(us.unfinished_games, 0),
-                    'online_status'    VALUE CASE WHEN u.LAST_SEEN > SYSDATE - (5 / (24 * 60)) THEN 'online' ELSE 'offline' END,
-                    'last_seen_text'   VALUE CASE
-                                              WHEN u.LAST_SEEN > SYSDATE - (5 / (24 * 60)) THEN N'В сети' -- <-- ИСПРАВЛЕНО
-                                              ELSE N'был(а) ' || TO_CHAR(u.LAST_SEEN, 'DD.MM HH24:MI') -- <-- ИСПРАВЛЕНО
-                                           END
+                    'last_seen_raw'    VALUE TO_CHAR(u.LAST_SEEN, 'YYYY-MM-DD"T"HH24:MI:SS')
                 ) ORDER BY NVL(ss.total_stars, 0) DESC, NVL(ss.solved_games, 0) DESC, u.USERNAME ASC
                 RETURNING CLOB
             )
@@ -631,11 +627,11 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             EXECUTE IMMEDIATE l_query INTO l_json;
         END IF;
     
-        RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'));
+        RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'), 'current_time_raw' VALUE TO_CHAR(SYSDATE, 'YYYY-MM-DD"T"HH24:MI:SS'));
     EXCEPTION
         WHEN OTHERS THEN
             -- Оставим этот блок, чтобы приложение не падало
-            RETURN '{"leaderboard": []}';
+            RETURN '{"leaderboard": [], "current_time_raw": "' || TO_CHAR(SYSDATE, 'YYYY-MM-DD"T"HH24:MI:SS') || '"}';
     END get_leaderboards;
 
     FUNCTION get_game_history(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB
@@ -669,14 +665,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     ) RETURN VARCHAR2
     AS
         l_count       NUMBER;
-        l_image_limit CONSTANT NUMBER := 7;
         l_new_image_id USER_IMAGES.IMAGE_ID%TYPE;
     BEGIN
-        SELECT COUNT(*) INTO l_count FROM USER_IMAGES WHERE USER_ID = p_user_id AND FILE_PATH IS NOT NULL;
-        IF l_count >= l_image_limit THEN
-            RETURN '{"success": false, "error": "Достигнут лимит в 7 картинок."}';
-        END IF;
-
         SELECT COUNT(*) INTO l_count FROM USER_IMAGES WHERE USER_ID = p_user_id AND IMAGE_HASH = p_image_hash;
         IF l_count > 0 THEN
             RETURN '{"success": true, "status": "duplicate"}';
@@ -866,11 +856,12 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_initial_optimal_moves NUMBER;
         l_current_optimal_moves NUMBER;
         l_progress              NUMBER := 0;
+        l_expiration_time       DATE;
+        l_time_remaining_sec    NUMBER;
     BEGIN
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_game_id;
 
         IF l_game.STATUS = 'SOLVED' THEN
-            -- Формируем решенное состояние доски
             l_current_board_state := '';
             FOR i IN 1..(l_game.BOARD_SIZE * l_game.BOARD_SIZE - 1) LOOP
                 l_current_board_state := l_current_board_state || i || ',';
@@ -922,6 +913,17 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             l_image_url := NULL;
         END IF;
 
+        IF l_game.STATUS = 'ACTIVE' THEN
+            l_expiration_time := l_game.START_TIME + (CEIL(10 * (l_game.BOARD_SIZE / 4)) / (24 * 60));
+            l_time_remaining_sec := ROUND((l_expiration_time - SYSDATE) * 86400);
+
+            IF l_time_remaining_sec < 0 THEN
+                l_time_remaining_sec := 0;
+            END IF;
+        ELSE
+            l_time_remaining_sec := 0;
+        END IF;
+
         -- Формируем итоговый JSON, добавив поле "progress"
         SELECT
             JSON_OBJECT(
@@ -929,7 +931,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 'boardSize'  VALUE l_game.BOARD_SIZE,
                 'boardState' VALUE JSON_QUERY('[' || l_current_board_state || ']', '$'),
                 'moves'      VALUE l_game.MOVE_COUNT,
-                'startTime'  VALUE TO_CHAR(l_game.START_TIME, 'YYYY-MM-DD"T"HH24:MI:SS'),
+                'timeRemaining' VALUE l_time_remaining_sec,
                 'status'     VALUE l_game.STATUS,
                 'imageUrl'   VALUE l_image_url,
                 'stars'      VALUE l_game.STARS_EARNED,
@@ -1262,7 +1264,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             WHERE CHALLENGE_DATE = p_challenge_date;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
-                RETURN '{"leaderboard": []}';
+                RETURN '{"leaderboard": [], "current_time_raw": "' || TO_CHAR(SYSDATE, 'YYYY-MM-DD"T"HH24:MI:SS') || '"}';
         END;
     
         WITH player_best_attempts AS (
@@ -1291,12 +1293,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                     'stars'     VALUE pba.STARS_EARNED,
                     'moves'     VALUE pba.MOVE_COUNT,
                     'time'      VALUE pba.time_seconds,
-                    'online_status' VALUE CASE WHEN u.LAST_SEEN > SYSDATE - (5 / (24 * 60)) THEN 'online' ELSE 'offline' END,
-                    'last_seen_text'  VALUE CASE
-                                           WHEN u.LAST_SEEN > SYSDATE - (5 / (24 * 60)) THEN N'В сети' -- <-- ИСПРАВЛЕНО
-                                           WHEN u.LAST_SEEN IS NULL THEN N'нет данных' -- <-- ИСПРАВЛЕНО
-                                           ELSE N'был(а) ' || TO_CHAR(u.LAST_SEEN, 'DD.MM HH24:MI') -- <-- ИСПРАВЛЕНО
-                                        END
+                    'last_seen_raw'  VALUE TO_CHAR(u.LAST_SEEN, 'YYYY-MM-DD"T"HH24:MI:SS')
                 )
                 ORDER BY pba.MOVE_COUNT ASC, pba.time_seconds ASC
                 RETURNING CLOB
@@ -1306,11 +1303,11 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         JOIN USERS u ON pba.USER_ID = u.USER_ID
         WHERE pba.rn = 1;
     
-        RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'));
+        RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'), 'current_time_raw' VALUE TO_CHAR(SYSDATE, 'YYYY-MM-DD"T"HH24:MI:SS'));
     
     EXCEPTION
         WHEN OTHERS THEN
-            RETURN '{"leaderboard": []}';
+            RETURN '{"leaderboard": [], "current_time_raw": "' || TO_CHAR(SYSDATE, 'YYYY-MM-DD"T"HH24:MI:SS') || '"}';
     END get_daily_leaderboard;
     
 END GAME_MANAGER_PKG;

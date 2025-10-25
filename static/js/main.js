@@ -3,7 +3,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const state = {
         currentUser: null,
         timerInterval: null,
-        startTime: null,
         totalSeconds: 0,
         gameMode: 'INTS',
         imageUrl: null,
@@ -189,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (confirm('У вас есть незаконченная игра. Хотите продолжить?')) {
                     ui.showScreen('game');
                     ui.render(gameState);
-                    timer.start(gameState.startTime, gameState.boardSize);
+                    timer.start(gameState.timeRemaining);
                 } else {
                     game.start(true, null);
                 }
@@ -199,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (gameState && gameState.sessionId) {
                 ui.showScreen('game');
                 ui.render(gameState);
-                timer.start(gameState.startTime, size);
+                timer.start(gameState.timeRemaining);
             }
         },
         move: async (tileValue) => { 
@@ -216,12 +215,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (gameState) ui.render(gameState); 
         },
         abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.showScreen('settings'); },
-        playAgain: () => { timer.stop(); ui.showScreen('settings'); setTimeout(() => { ui.refreshUserData(); }, 500);},
+        playAgain: () => { timer.stop(); ui.showScreen('settings'); },
         hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
         timeout: async () => { await api.performAction('timeout'); timer.stop(); ui.showScreen('settings'); },
         restart: async () => { 
             const gameState = await api.performAction('restart', {}, 'Перезапуск игры...'); // <-- Пример
-            if (gameState) { timer.stop(); ui.render(gameState); timer.start(gameState.startTime, state.boardSize); } 
+            if (gameState) { 
+                timer.stop(); 
+                ui.render(gameState); 
+                timer.start(gameState.timeRemaining); 
+            } 
         },
     };
     
@@ -234,6 +237,34 @@ document.addEventListener('DOMContentLoaded', () => {
             return `${minutes}:${seconds}`;
         },
         
+        formatPlayerStatus: (lastSeenRaw, currentDbTimeRaw) => {
+            // Случай 1: Данных о последнем визите нет (старый пользователь) ИЛИ нет времени от БД
+            if (!lastSeenRaw || !currentDbTimeRaw) {
+                return `<span class="status-indicator offline"></span><span class="last-seen-text">нет данных</span>`;
+            }
+
+            const lastSeenDate = new Date(lastSeenRaw);
+            const now = new Date(currentDbTimeRaw); // <-- Используем ВРЕМЯ ИЗ БД, а не new Date()
+            
+            // Разница в минутах
+            const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / (1000 * 60);
+
+            // Случай 2: Пользователь онлайн (активность менее 5 минут назад)
+            if (diffMinutes < 5) {
+                return `<span class="status-indicator online"></span><span class="last-seen-text">В сети</span>`;
+            } 
+            
+            // Случай 3: Пользователь оффлайн
+            // Форматируем дату в нужный вид: ДД.ММ ЧЧ:ММ
+            const day = String(lastSeenDate.getDate()).padStart(2, '0');
+            const month = String(lastSeenDate.getMonth() + 1).padStart(2, '0'); // Месяцы в JS с 0
+            const hours = String(lastSeenDate.getHours()).padStart(2, '0');
+            const minutes = String(lastSeenDate.getMinutes()).padStart(2, '0');
+            const formattedDate = `${day}.${month} ${hours}:${minutes}`;
+            
+            return `<span class="status-indicator offline"></span><span class="last-seen-text">был(а) ${formattedDate}</span>`;
+        },
+
         showLoader: (message = 'Загрузка...') => {
             DOMElements.loadingText.textContent = message;
             DOMElements.loadingOverlay.classList.remove('hidden');
@@ -327,18 +358,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const file = event.target.files[0];
             if (!file) return;
 
-            const MAX_FILE_SIZE_MB = 5;
-            const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
             const allowedTypes = ['image/jpeg', 'image/png'];
 
             if (!allowedTypes.includes(file.type)) {
                 DOMElements.customImageName.textContent = 'Ошибка: Разрешены только JPG и PNG.';
-                event.target.value = '';
-                return;
-            }
-
-            if (file.size > MAX_FILE_SIZE_BYTES) {
-                DOMElements.customImageName.textContent = `Ошибка: Файл слишком большой (макс. ${MAX_FILE_SIZE_MB} МБ).`;
                 event.target.value = '';
                 return;
             }
@@ -428,9 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 DOMElements.activeGameView.classList.add('hidden');
                 DOMElements.winOverlay.classList.remove('hidden');
                 
-                ui.renderUserStats().then(() => {
-                    ui.updateLoginState();
-                });
+                ui.updateLoginState();
             } else {
                 if (DOMElements.progressCounter && progress !== undefined) {
                     DOMElements.progressCounter.textContent = `${progress}%`;
@@ -471,6 +492,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await api.performAction('get_leaderboards', { size: size, difficulty: difficulty });
             const container = DOMElements.leaderboardTables;
             container.innerHTML = '';
+            
+            const currentDbTimeRaw = data.current_time_raw; 
 
             if (!data || !data.leaderboard || data.leaderboard.length === 0) {
                 container.innerHTML = '<p><i>Пока нет данных для выбранных фильтров</i></p>';
@@ -501,9 +524,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const place = ['🏆', '🥈', '🥉'][index] || `#${index + 1}`;
 
-                const statusHtml = `
-                    <span class="status-indicator ${player.online_status}"></span>
-                    <span class="last-seen-text">${player.last_seen_text}</span>`;
+                // Вызываем нашу новую функцию-помощник с двумя аргументами
+                const statusHtml = ui.formatPlayerStatus(player.last_seen_raw, currentDbTimeRaw);
 
                 row.innerHTML = `
                     <td>${place}</td>
@@ -584,6 +606,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             container.innerHTML = ''; 
             
+            // Извлекаем время БД из ответа
+            const currentDbTimeRaw = data.current_time_raw;
+
             if (!data || !data.leaderboard || data.leaderboard.length === 0) {
                 container.innerHTML = '<p><i>Сегодня еще никто не прошел челлендж. Будьте первым!</i></p>';
                 return;
@@ -612,9 +637,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             '<span class="trophy-icon">🥈</span>', 
                             '<span class="trophy-icon">🥉</span>'][index] || `#${index + 1}`;
                 
-                const statusHtml = `
-                    <span class="status-indicator ${player.online_status}"></span>
-                    <span class="last-seen-text">${player.last_seen_text}</span>`;
+                // Вызываем нашу новую функцию-помощник с двумя аргументами
+                const statusHtml = ui.formatPlayerStatus(player.last_seen_raw, currentDbTimeRaw);
 
                 row.innerHTML = `
                     <td>${place}</td>
@@ -631,25 +655,41 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     // === Timer Module ===
+    // === Timer Module ===
     const timer = {
-        start: (startTimeString, boardSize) => {
-            timer.stop(); state.startTime = new Date(startTimeString);
-            const totalMinutes = Math.ceil(10 * (boardSize / 4));
-            state.totalSeconds = totalMinutes * 60;
+        start: (initialTimeRemaining) => {
+            timer.stop();
+            
+            state.totalSeconds = initialTimeRemaining; 
+
+            // Если время уже 0, не запускаем таймер
+            if (state.totalSeconds <= 0) {
+                DOMElements.timerDisplay.textContent = '00:00';
+                return;
+            }
+
+            DOMElements.timerDisplay.textContent = ui.formatTime(state.totalSeconds);
+
             state.timerInterval = setInterval(() => {
-                const timeElapsed = Math.floor((new Date() - state.startTime) / 1000);
-                const timeRemaining = state.totalSeconds - timeElapsed;
-                if (timeRemaining <= 0) {
+
+                state.totalSeconds--; 
+
+                if (state.totalSeconds <= 0) {
                     DOMElements.timerDisplay.textContent = '00:00';
                     timer.stop();
                     alert('Время вышло!');
                     game.timeout();
                     return;
                 }
-                DOMElements.timerDisplay.textContent = ui.formatTime(timeRemaining);
+                
+                DOMElements.timerDisplay.textContent = ui.formatTime(state.totalSeconds);
             }, 1000);
         },
-        stop: () => { if (state.timerInterval) clearInterval(state.timerInterval); state.timerInterval = null; }
+        stop: () => { 
+            if (state.timerInterval) clearInterval(state.timerInterval); 
+            state.timerInterval = null; 
+            state.totalSeconds = 0;
+        }
     };
 
     // === Initializer: Assigns all event listeners ===
