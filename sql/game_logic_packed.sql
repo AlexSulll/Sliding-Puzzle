@@ -23,6 +23,8 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
 
     PROCEDURE cleanup_expired_games;
 
+    PROCEDURE p_terminate_game(p_game_id IN GAMES.GAME_ID%TYPE, p_status  IN GAMES.STATUS%TYPE);
+
     FUNCTION check_active_session (
         p_user_id IN USERS.USER_ID%TYPE
     ) RETURN CLOB;
@@ -173,6 +175,21 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     g_target_positions GAME_MANAGER_PKG.t_board;
     g_board_size       NUMBER;
 
+    PROCEDURE p_terminate_game(
+        p_game_id IN GAMES.GAME_ID%TYPE,
+        p_status  IN GAMES.STATUS%TYPE
+    )
+    AS
+    BEGIN
+        UPDATE GAMES
+        SET STATUS = p_status,
+            COMPLETED_AT = NULL,
+            CURRENT_MOVE_ORDER = NULL
+        WHERE GAME_ID = p_game_id;
+
+        DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_game_id;
+    END p_terminate_game;
+
     FUNCTION get_target_state(p_size IN NUMBER) RETURN VARCHAR2
     IS
         l_target_state VARCHAR2(120) := '';
@@ -257,11 +274,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             WHERE STATUS = 'ACTIVE'
         ) LOOP
             IF rec.EXPIRATION_TIME < SYSDATE THEN
-                UPDATE GAMES
-                SET STATUS = 'TIMEOUT', CURRENT_MOVE_ORDER = NULL
-                WHERE GAME_ID = rec.GAME_ID;
-
-                DELETE FROM MOVE_HISTORY WHERE GAME_ID = rec.GAME_ID;
+                p_terminate_game(rec.GAME_ID, 'TIMEOUT');
             END IF;
         END LOOP;
         COMMIT;
@@ -316,8 +329,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
         -- Очистка предыдущей активной сессии, если она была
         FOR rec IN (SELECT GAME_ID FROM GAMES WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE') LOOP
-            DELETE FROM MOVE_HISTORY WHERE GAME_ID = rec.GAME_ID;
-            UPDATE GAMES SET STATUS = 'ABANDONED', CURRENT_MOVE_ORDER = null WHERE GAME_ID = rec.GAME_ID;
+            p_terminate_game(rec.GAME_ID, 'ABANDONED');
         END LOOP;
 
         IF p_replay_game_id IS NOT NULL THEN
@@ -384,15 +396,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     RETURN VARCHAR2
     AS
     BEGIN
-
-        UPDATE GAMES
-        SET STATUS = 'ABANDONED',
-            COMPLETED_AT = NULL,
-            CURRENT_MOVE_ORDER = NULL
-        WHERE GAME_ID = p_session_id;
-
-        DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
-
+        p_terminate_game(p_session_id, 'ABANDONED');
         COMMIT;
         RETURN '{"success": true}';
     END abandon_game;
@@ -400,14 +404,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     PROCEDURE timeout_game(p_session_id IN GAMES.GAME_ID%TYPE)
     AS
     BEGIN
-
-        UPDATE GAMES
-        SET STATUS = 'TIMEOUT',
-            COMPLETED_AT = NULL,
-            CURRENT_MOVE_ORDER = NULL
-        WHERE GAME_ID = p_session_id;
-
-        DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
+        p_terminate_game(p_session_id, 'TIMEOUT');
         COMMIT;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
@@ -884,14 +881,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_game_id;
 
         IF l_game.STATUS = 'SOLVED' THEN
-            l_current_board_state := '';
-            FOR i IN 1..(l_game.BOARD_SIZE * l_game.BOARD_SIZE - 1) LOOP
-                l_current_board_state := l_current_board_state || i || ',';
-            END LOOP;
-            l_current_board_state := l_current_board_state || '0';
-
+            l_current_board_state := get_target_state(l_game.BOARD_SIZE);
             l_progress := 100;
-
         ELSE
             -- Получаем текущее состояние доски из истории
             SELECT BOARD_STATE
