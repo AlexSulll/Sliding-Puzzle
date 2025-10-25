@@ -20,7 +20,6 @@ document.addEventListener('DOMContentLoaded', () => {
         dailyChallengeScreen: document.getElementById('daily-challenge-screen'),
         dailyLeaderboardContainer: document.getElementById('daily-leaderboard-container'),
         startDailyChallengeBtn: document.getElementById('start-daily-challenge-btn'),
-        backToSettingsBtn: document.getElementById('back-to-settings-btn'),
         gameScreen: document.getElementById('game-screen'),
         leaderboardScreen: document.getElementById('leaderboard-screen'),
         historyScreen: document.getElementById('history-screen'),
@@ -304,17 +303,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 DOMElements.userImagePreviews.innerHTML = '<p class="no-images-msg">Вы еще не загружали картинок.</p>';
             }
-
-            const imageLimit = 7;
-            if (userImages && userImages.length >= imageLimit) {
-                DOMElements.uploadLabel.classList.add('hidden');
-                DOMElements.customImageName.textContent = `Достигнут лимит в ${imageLimit} картинок.`;
-            } else {
-                DOMElements.uploadLabel.classList.remove('hidden');
-                if (DOMElements.customImageName.textContent.startsWith('Достигнут')) {
-                    DOMElements.customImageName.textContent = '';
-                }
-            }
         },
         createPreviewImage: (path, alt, id = null) => {
             const img = document.createElement('img');
@@ -380,7 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     state.gameMode = 'IMAGE';
                     game.start(true, null);
                 } else {
-                    DOMElements.customImageName.textContent = `Загружено: ${file.name}`;
+                    DOMElements.customImageName.textContent = 'Картинка успешно загружена';
                     ui.loadImages();
                 }
             } else if (res.status === 'duplicate') {
@@ -858,13 +846,17 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.userImagePreviews.addEventListener('click', async (event) => {
             const deleteButton = event.target.closest('.delete-btn');
             if (deleteButton) {
+                DOMElements.customImageName.textContent = '';
+
                 const imageId = deleteButton.dataset.imageId;
                 if (confirm('Вы уверены, что хотите удалить эту картинку?')) {
                     const response = await api.performAction('delete_image', { imageId });
                     if (response && response.success) {
+                        DOMElements.customImageName.textContent = 'Картинка успешно удалена';
                         ui.loadImages();
                     } else {
-                        alert('Не удалось удалить картинку.');
+                        const errorMessage = response && response.message ? response.message : 'Не удалось удалить картинку.';
+                        DOMElements.customImageName.textContent = errorMessage;
                     }
                 }
             }
@@ -875,12 +867,6 @@ document.addEventListener('DOMContentLoaded', () => {
             game.start(false, null);
         });
 
-        DOMElements.backToSettingsBtn.addEventListener('click', () => {
-            DOMElements.dailyCheck.checked = false;
-            state.isDaily = false;
-            DOMElements.regularSettings.classList.remove('hidden');
-            ui.showScreen('settings');
-        });
         auth.checkStatus();
     }
     init();

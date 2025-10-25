@@ -175,9 +175,28 @@ def handle_action():
 
         elif action == 'delete_image':
             image_id_to_delete = params.get('imageId')
-            if image_id_to_delete:
-                result_json_str = cursor.callfunc('GAME_MANAGER_PKG.delete_user_image', str, [user_id, int(image_id_to_delete)])
-                return result_json_str, 200, {'Content-Type': 'application/json'}
+            if not image_id_to_delete:
+                return jsonify({"success": False, "error": "No imageId provided"}), 400
+
+            result_json_str = cursor.callfunc('GAME_MANAGER_PKG.delete_user_image', str, [user_id, int(image_id_to_delete)])
+            db_response = json.loads(result_json_str)
+
+            if db_response.get('success') and db_response.get('file_path_to_delete'):
+                try:
+                    file_path_from_db = db_response['file_path_to_delete']
+                    filename = os.path.basename(file_path_from_db)
+                    full_file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                    if os.path.exists(full_file_path):
+                        os.remove(full_file_path)
+                        db_response['message'] = 'Image record and file deleted' # Обновляем сообщение для клиента
+                    else:
+                        db_response['message'] = 'Image record deleted, but file not found on disk'
+
+                except Exception as e:
+                    db_response['message'] = f"Image record deleted, but file deletion failed: {str(e)}"
+                    return jsonify(db_response), 500
+            
+            return jsonify(db_response)
         
         elif action == 'restart':
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.restart_game', oracledb.DB_TYPE_CLOB, [game_session_id])

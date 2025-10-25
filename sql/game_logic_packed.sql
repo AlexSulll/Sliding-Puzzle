@@ -736,14 +736,36 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     )
     RETURN VARCHAR2
     AS
+        l_file_path USER_IMAGES.FILE_PATH%TYPE;
     BEGIN
+        BEGIN
+            SELECT FILE_PATH INTO l_file_path
+            FROM USER_IMAGES
+            WHERE IMAGE_ID = p_image_id AND USER_ID = p_user_id AND FILE_PATH IS NOT NULL;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                l_file_path := NULL; 
+        END;
+
         UPDATE GAMES SET IMAGE_ID = NULL
         WHERE IMAGE_ID = p_image_id;
+        
         DELETE FROM USER_IMAGES
         WHERE IMAGE_ID = p_image_id AND USER_ID = p_user_id;
+        
         COMMIT;
 
-        RETURN '{"success": true, "message": "Image deleted"}';
+        RETURN JSON_OBJECT(
+            'success' VALUE true, 
+            'message' VALUE 'Image record deleted',
+            'file_path_to_delete' VALUE l_file_path
+        );
+        
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            RETURN JSON_OBJECT('success' VALUE false, 'message' VALUE SQLERRM);
+
     END delete_user_image;
 
     ----------------------------------------------------------------------------
