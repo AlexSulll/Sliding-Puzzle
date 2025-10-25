@@ -165,6 +165,12 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_board_size_param IN NUMBER
     ) RETURN NUMBER;
 
+    FUNCTION p_find_optimal_path(
+        p_start_state  IN VARCHAR2,
+        p_target_state IN VARCHAR2,
+        p_board_size   IN NUMBER
+    ) RETURN GAME_MANAGER_PKG.t_path;
+
 END GAME_MANAGER_PKG;
 /
 
@@ -189,6 +195,49 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
         DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_game_id;
     END p_terminate_game;
+
+    FUNCTION p_find_optimal_path(
+        p_start_state  IN VARCHAR2,
+        p_target_state IN VARCHAR2,
+        p_board_size   IN NUMBER
+    ) RETURN GAME_MANAGER_PKG.t_path
+    AS
+        l_initial_board GAME_MANAGER_PKG.t_board := state_to_table(p_start_state);
+        l_target_board  GAME_MANAGER_PKG.t_board := state_to_table(p_target_state);
+        l_path          GAME_MANAGER_PKG.t_path;
+        l_solution      GAME_MANAGER_PKG.t_path;
+        l_initial_node  GAME_MANAGER_PKG.t_node;
+        l_threshold     NUMBER;
+        l_result        NUMBER;
+    BEGIN
+        init_target_positions(l_target_board, p_board_size);
+
+        l_initial_node.board_state := l_initial_board;
+        l_initial_node.g_cost := 0;
+        l_initial_node.h_cost := calculate_heuristic(l_initial_board);
+        l_path(1) := l_initial_node;
+        l_threshold := l_initial_node.h_cost;
+
+        IF l_threshold = 0 THEN
+            RETURN l_path;
+        END IF;
+
+        LOOP
+            l_result := search(l_path, 0, l_threshold, l_solution);
+            
+            IF l_result = -1 THEN
+                RETURN l_solution;
+            END IF;
+            
+            l_threshold := l_result;
+
+            IF l_threshold > 80 THEN 
+                l_solution.DELETE;
+                RETURN l_solution;
+            END IF;
+        END LOOP;
+        
+    END p_find_optimal_path;
 
     FUNCTION get_target_state(p_size IN NUMBER) RETURN VARCHAR2
     IS
@@ -970,52 +1019,22 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         p_board_size_param IN NUMBER
     ) RETURN NUMBER
     AS
-        l_path          GAME_MANAGER_PKG.t_path;
-        l_solution      GAME_MANAGER_PKG.t_path;
-        l_initial_node  GAME_MANAGER_PKG.t_node;
-        l_threshold     NUMBER;
-        l_result        NUMBER;
-        l_target_state  VARCHAR2(120) := '';
+        l_target_state  VARCHAR2(120);
+        l_solution_path GAME_MANAGER_PKG.t_path;
     BEGIN
-        -- Формируем целевое (решенное) состояние доски
-        FOR i IN 1..(p_board_size_param * p_board_size_param - 1) LOOP
-            l_target_state := l_target_state || i || ',';
-        END LOOP;
-        l_target_state := l_target_state || '0';
 
-        -- Инициализируем глобальные переменные для солвера
-        init_target_positions(state_to_table(l_target_state), p_board_size_param);
+        l_target_state := get_target_state(p_board_size_param);
 
-        -- Настраиваем начальный узел для поиска
-        l_initial_node.board_state := state_to_table(p_board_state);
-        l_initial_node.g_cost := 0;
-        l_initial_node.h_cost := calculate_heuristic(l_initial_node.board_state);
-        l_path(1) := l_initial_node;
-        l_threshold := l_initial_node.h_cost;
+        l_solution_path := p_find_optimal_path(
+            p_start_state  => p_board_state,
+            p_target_state => l_target_state,
+            p_board_size   => p_board_size_param
+        );
 
-        -- Если эвристика равна 0, доска уже решена
-        IF l_threshold = 0 THEN
-            RETURN 0;
-        END IF;
-
-        -- Запускаем цикл поиска IDA*
-        LOOP
-            l_result := search(l_path, 0, l_threshold, l_solution);
-            IF l_result = -1 THEN -- Решение найдено
-                EXIT;
-            END IF;
-            l_threshold := l_result;
-            -- Ограничение, чтобы избежать бесконечного поиска на сложных досках
-            IF l_threshold > 80 THEN 
-                l_solution.DELETE; 
-                EXIT; 
-            END IF;
-        END LOOP;
-
-        IF l_solution.COUNT > 0 THEN
-            RETURN l_solution.COUNT - 1; -- Возвращаем длину пути
+        IF l_solution_path.COUNT > 0 THEN
+            RETURN l_solution_path.COUNT - 1;
         ELSE
-            RETURN 999; -- Возвращаем большое число, если решение не найдено
+            RETURN 999;
         END IF;
     END calculate_optimal_path_length;
 
@@ -1172,35 +1191,19 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         p_board_size_param  IN NUMBER
     ) RETURN NUMBER
     AS
-        l_initial_board GAME_MANAGER_PKG.t_board := state_to_table(p_board_state);
-        l_target_board  GAME_MANAGER_PKG.t_board := state_to_table(p_target_board_state);
-        l_path          GAME_MANAGER_PKG.t_path;
-        l_solution      GAME_MANAGER_PKG.t_path;
-        l_initial_node  GAME_MANAGER_PKG.t_node;
-        l_threshold     NUMBER;
-        l_result        NUMBER;
-        l_start_time    NUMBER;
+        l_solution_path GAME_MANAGER_PKG.t_path;
     BEGIN
-        init_target_positions(l_target_board, p_board_size_param);
-        l_initial_node.board_state := l_initial_board;
-        l_initial_node.g_cost := 0;
-        l_initial_node.h_cost := calculate_heuristic(l_initial_board);
-        l_path(1) := l_initial_node;
-        l_threshold := l_initial_node.h_cost;
-        l_start_time := DBMS_UTILITY.GET_TIME;
-        
-        LOOP
-            l_result := search(l_path, 0, l_threshold, l_solution);
-            IF l_result = -1 THEN 
-                EXIT; 
-            END IF;
-            l_threshold := l_result;
-        END LOOP;
-        
-        IF l_solution.COUNT > 1 THEN
+
+        l_solution_path := p_find_optimal_path(
+            p_start_state  => p_board_state,
+            p_target_state => p_target_board_state,
+            p_board_size   => p_board_size_param
+        );
+
+        IF l_solution_path.COUNT > 1 THEN
             DECLARE
-                l_board1 GAME_MANAGER_PKG.t_board := l_solution(1).board_state;
-                l_board2 GAME_MANAGER_PKG.t_board := l_solution(2).board_state;
+                l_board1 GAME_MANAGER_PKG.t_board := l_solution_path(1).board_state;
+                l_board2 GAME_MANAGER_PKG.t_board := l_solution_path(2).board_state;
             BEGIN
                 FOR i IN 1..l_board1.COUNT LOOP
                     IF l_board1(i) != 0 AND l_board2(i) = 0 THEN
@@ -1209,6 +1212,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 END LOOP;
             END;
         END IF;
+
         RETURN NULL;
     END get_next_best_move;
     
