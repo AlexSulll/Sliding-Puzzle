@@ -911,7 +911,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             l_shuffled_board := shuffle_board(l_target_state, l_shuffle_moves, l_board_size);
             l_optimal_moves := calculate_optimal_path_length(l_shuffled_board, l_board_size);
         
-            EXIT WHEN l_optimal_moves >= 10;   
+            EXIT WHEN l_optimal_moves >= 5;   
         END LOOP;
         
         l_image_or_int := TRUNC(DBMS_RANDOM.VALUE(0, 2));
