@@ -23,7 +23,7 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
 
     PROCEDURE cleanup_expired_games;
 
-    PROCEDURE p_terminate_game(p_game_id IN GAMES.GAME_ID%TYPE, p_status  IN GAMES.STATUS%TYPE);
+    PROCEDURE terminate_game(p_game_id IN GAMES.GAME_ID%TYPE, p_status  IN GAMES.STATUS%TYPE);
 
     FUNCTION check_active_session (
         p_user_id IN USERS.USER_ID%TYPE
@@ -164,13 +164,13 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_board_size_param IN NUMBER
     ) RETURN NUMBER;
 
-    FUNCTION p_find_optimal_path(
+    FUNCTION find_optimal_path(
         p_start_state  IN VARCHAR2,
         p_target_state IN VARCHAR2,
         p_board_size   IN NUMBER
     ) RETURN GAME_MANAGER_PKG.t_path;
 
-    FUNCTION p_get_possible_moves(
+    FUNCTION get_possible_moves(
         p_empty_idx IN PLS_INTEGER,
         p_size      IN NUMBER
     ) RETURN GAME_MANAGER_PKG.t_board;
@@ -185,7 +185,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     g_target_positions GAME_MANAGER_PKG.t_board;
     g_board_size       NUMBER;
 
-    PROCEDURE p_terminate_game(
+    PROCEDURE terminate_game(
         p_game_id IN GAMES.GAME_ID%TYPE,
         p_status  IN GAMES.STATUS%TYPE
     )
@@ -196,9 +196,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         WHERE GAME_ID = p_game_id;
 
         DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_game_id;
-    END p_terminate_game;
+    END terminate_game;
 
-    FUNCTION p_find_optimal_path(
+    FUNCTION find_optimal_path(
         p_start_state  IN VARCHAR2,
         p_target_state IN VARCHAR2,
         p_board_size   IN NUMBER
@@ -238,7 +238,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 RETURN l_solution;
             END IF;
         END LOOP;  
-    END p_find_optimal_path;
+    END find_optimal_path;
 
     FUNCTION get_target_state(p_size IN NUMBER) RETURN VARCHAR2
     IS
@@ -251,7 +251,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         RETURN l_target_state;
     END get_target_state;
 
-    FUNCTION p_get_possible_moves(
+    FUNCTION get_possible_moves(
         p_empty_idx IN PLS_INTEGER,
         p_size      IN NUMBER
     ) RETURN GAME_MANAGER_PKG.t_board
@@ -283,7 +283,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         END IF;
 
         RETURN l_possible_moves;
-    END p_get_possible_moves;
+    END get_possible_moves;
 
     ----------------------------------------------------------------------------
     -- РЕАЛИЗАЦИЯ: БЛОК АВТОРИЗАЦИИ
@@ -360,7 +360,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             WHERE STATUS = 'ACTIVE'
         ) LOOP
             IF rec.EXPIRATION_TIME < SYSDATE THEN
-                p_terminate_game(rec.GAME_ID, 'TIMEOUT');
+                terminate_game(rec.GAME_ID, 'TIMEOUT');
             END IF;
         END LOOP;
         COMMIT;
@@ -414,7 +414,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         END IF;
 
         FOR rec IN (SELECT GAME_ID FROM GAMES WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE') LOOP
-            p_terminate_game(rec.GAME_ID, 'ABANDONED');
+            terminate_game(rec.GAME_ID, 'ABANDONED');
         END LOOP;
 
         IF p_replay_game_id IS NOT NULL THEN
@@ -478,7 +478,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     RETURN VARCHAR2
     AS
     BEGIN
-        p_terminate_game(p_session_id, 'ABANDONED');
+        terminate_game(p_session_id, 'ABANDONED');
         COMMIT;
         RETURN '{"success": true}';
     END abandon_game;
@@ -486,7 +486,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     PROCEDURE timeout_game(p_session_id IN GAMES.GAME_ID%TYPE)
     AS
     BEGIN
-        p_terminate_game(p_session_id, 'TIMEOUT');
+        terminate_game(p_session_id, 'TIMEOUT');
         COMMIT;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
@@ -940,7 +940,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                         l_possible_moves GAME_MANAGER_PKG.t_board;
                     BEGIN
                         
-                        l_possible_moves := p_get_possible_moves(l_empty_idx, p_size);
+                        l_possible_moves := get_possible_moves(l_empty_idx, p_size);
 
                         DECLARE
                             l_rand_move PLS_INTEGER := TRUNC(DBMS_RANDOM.VALUE(1, l_possible_moves.COUNT + 1));
@@ -1069,7 +1069,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
         l_target_state := get_target_state(p_board_size_param);
 
-        l_solution_path := p_find_optimal_path(
+        l_solution_path := find_optimal_path(
             p_start_state  => p_board_state,
             p_target_state => l_target_state,
             p_board_size   => p_board_size_param
@@ -1188,7 +1188,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             l_possible_moves GAME_MANAGER_PKG.t_board;
         BEGIN
 
-            l_possible_moves := p_get_possible_moves(l_empty_idx, g_board_size);
+            l_possible_moves := get_possible_moves(l_empty_idx, g_board_size);
             
             FOR i IN 1 .. l_possible_moves.COUNT LOOP
                 DECLARE
@@ -1235,7 +1235,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_solution_path GAME_MANAGER_PKG.t_path;
     BEGIN
 
-        l_solution_path := p_find_optimal_path(
+        l_solution_path := find_optimal_path(
             p_start_state  => p_board_state,
             p_target_state => p_target_board_state,
             p_board_size   => p_board_size_param
