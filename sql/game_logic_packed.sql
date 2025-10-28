@@ -627,7 +627,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     ) RETURN CLOB
     AS
         l_json  CLOB;
-        l_query VARCHAR2(2000);
+        l_query VARCHAR2(2500);
     BEGIN
         l_query := q'[
             SELECT JSON_ARRAYAGG(
@@ -672,22 +672,33 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             ) ss ON u.USER_ID = ss.USER_ID
             LEFT JOIN (
                 SELECT
-                    USER_ID,
-                    COUNT(GAME_ID) as unfinished_games
-                FROM GAMES
-                WHERE STATUS IN ('ABANDONED', 'TIMEOUT')
+                    g.USER_ID,
+                    COUNT(g.GAME_ID) as unfinished_games
+                FROM GAMES g
+                WHERE g.STATUS IN ('ABANDONED', 'TIMEOUT')
         ]';
 
         IF p_filter_size > 0 THEN
-            l_query := l_query || q'[ AND BOARD_SIZE = :size2]';
+            l_query := l_query || q'[ AND g.BOARD_SIZE = :size2]';
         END IF;
 
         IF p_filter_difficulty > 0 THEN
-            l_query := l_query || q'[ AND SHUFFLE_MOVES = :diff2]';
+            l_query := l_query || q'[ AND g.SHUFFLE_MOVES = :diff2]';
         END IF;
 
         l_query := l_query || q'[
-                GROUP BY USER_ID
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM GAMES s
+                    WHERE s.USER_ID = g.USER_ID
+                      AND s.STATUS = 'SOLVED'
+                      AND COALESCE(TO_CHAR(s.CHALLENGE_ID), s.INITIAL_BOARD_STATE) = 
+                          COALESCE(TO_CHAR(g.CHALLENGE_ID), g.INITIAL_BOARD_STATE)
+                )
+        ]';
+
+        l_query := l_query || q'[
+                GROUP BY g.USER_ID
             ) us ON u.USER_ID = us.USER_ID
         ]';
 
@@ -717,7 +728,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 'date'   VALUE TO_CHAR(g.START_TIME, 'DD.MM.YYYY HH24:MI'),
                 'size'   VALUE g.BOARD_SIZE,
                 'moves'  VALUE g.MOVE_COUNT,
-                'time'   VALUE ROUND((g.COMPLETED_AT - g.START_TIME) * 86400),
+                'time'   VALUE GREATEST(ROUND((g.COMPLETED_AT - g.START_TIME) * 86400), 1),
                 'status' VALUE g.STATUS,
                 'stars'  VALUE g.STARS_EARNED
             ) ORDER BY g.START_TIME DESC
@@ -730,7 +741,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         IF l_json IS NULL OR DBMS_LOB.GETLENGTH(l_json) = 0 THEN
             RETURN '[]';
         END IF;
-        
+
         RETURN l_json;
     END get_game_history;
 
@@ -895,8 +906,13 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         END IF;
         
         l_target_state := get_target_state(l_board_size);
-        l_shuffled_board := shuffle_board(l_target_state, l_shuffle_moves, l_board_size);
-        l_optimal_moves := calculate_optimal_path_length(l_shuffled_board, l_board_size);
+        
+        LOOP
+            l_shuffled_board := shuffle_board(l_target_state, l_shuffle_moves, l_board_size);
+            l_optimal_moves := calculate_optimal_path_length(l_shuffled_board, l_board_size);
+        
+            EXIT WHEN l_optimal_moves >= 10;   
+        END LOOP;
         
         l_image_or_int := TRUNC(DBMS_RANDOM.VALUE(0, 2));
         
@@ -1040,7 +1056,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 'progress'   VALUE l_progress,
                 'duration'   VALUE CASE
                                 WHEN l_game.STATUS = 'SOLVED'
-                                THEN ROUND((l_game.COMPLETED_AT - l_game.START_TIME) * 86400)
+                                THEN GREATEST(ROUND((l_game.COMPLETED_AT - l_game.START_TIME) * 86400), 1)
                                 ELSE NULL
                             END
             )
@@ -1320,7 +1336,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 g.USER_ID,
                 g.STARS_EARNED,
                 g.MOVE_COUNT,
-                ROUND((g.COMPLETED_AT - g.START_TIME) * 86400) as time_seconds,
+                GREATEST(ROUND((g.COMPLETED_AT - g.START_TIME) * 86400), 1) as time_seconds,
                 ROW_NUMBER() OVER(
                     PARTITION BY g.USER_ID
                     ORDER BY
