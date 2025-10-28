@@ -727,7 +727,11 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         FROM GAMES g
         WHERE g.USER_ID = p_user_id AND g.STATUS IN ('SOLVED', 'ABANDONED', 'TIMEOUT');
 
-        RETURN NVL(l_json, '[]');
+        IF l_json IS NULL OR DBMS_LOB.GETLENGTH(l_json) = 0 THEN
+            RETURN '[]';
+        END IF;
+        
+        RETURN l_json;
     END get_game_history;
 
     FUNCTION save_user_image(
@@ -894,10 +898,10 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_shuffled_board := shuffle_board(l_target_state, l_shuffle_moves, l_board_size);
         l_optimal_moves := calculate_optimal_path_length(l_shuffled_board, l_board_size);
         
-        l_image_or_int := TRUNC(DBMS_RANDOM.VALUE(0, 1));
+        l_image_or_int := TRUNC(DBMS_RANDOM.VALUE(0, 2));
         
         IF l_image_or_int = 1 THEN
-            l_image_id := TRUNC(DBMS_RANDOM.VALUE(1, 3));
+            l_image_id := TRUNC(DBMS_RANDOM.VALUE(1, 4));
             INSERT INTO DAILY_CHALLENGES (
                 CHALLENGE_ID, CHALLENGE_DATE, BOARD_SIZE, SHUFFLE_MOVES, IMAGE_ID, BOARD_STATE, OPTIMAL_MOVES
             ) VALUES (
