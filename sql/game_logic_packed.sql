@@ -179,9 +179,7 @@ END GAME_MANAGER_PKG;
 /
 
 CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
-    ----------------------------------------------------------------------------
-    -- ПРИВАТНЫЕ УТИЛИТЫ И ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
-    ----------------------------------------------------------------------------
+
     g_target_positions GAME_MANAGER_PKG.t_board;
     g_board_size       NUMBER;
 
@@ -226,18 +224,18 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
         LOOP
             l_result := search(l_path, 0, l_threshold, l_solution);
-            
+
             IF l_result = -1 THEN
                 RETURN l_solution;
             END IF;
-            
+
             l_threshold := l_result;
 
-            IF l_threshold > 80 THEN 
+            IF l_threshold > 80 THEN
                 l_solution.DELETE;
                 RETURN l_solution;
             END IF;
-        END LOOP;  
+        END LOOP;
     END find_optimal_path;
 
     FUNCTION get_target_state(p_size IN NUMBER) RETURN VARCHAR2
@@ -259,35 +257,29 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_possible_moves GAME_MANAGER_PKG.t_board;
         k PLS_INTEGER := 1;
     BEGIN
-        -- Можно походить ВВЕРХ (плитка снизу)
-        IF p_empty_idx + p_size <= p_size * p_size THEN 
-            l_possible_moves(k) := p_empty_idx + p_size; 
-            k := k + 1; 
-        END IF;
-        
-        -- Можно походить ВНИЗ (плитка сверху)
-        IF p_empty_idx - p_size > 0 THEN 
-            l_possible_moves(k) := p_empty_idx - p_size; 
-            k := k + 1; 
-        END IF;
-        
-        -- Можно походить ВЛЕВО (плитка справа)
-        IF MOD(p_empty_idx - 1, p_size) < p_size - 1 THEN 
-            l_possible_moves(k) := p_empty_idx + 1; 
-            k := k + 1; 
+
+        IF p_empty_idx + p_size <= p_size * p_size THEN
+            l_possible_moves(k) := p_empty_idx + p_size;
+            k := k + 1;
         END IF;
 
-        -- Можно походить ВПРАВО (плитка слева)
-        IF MOD(p_empty_idx - 1, p_size) > 0 THEN 
-            l_possible_moves(k) := p_empty_idx - 1; 
+        IF p_empty_idx - p_size > 0 THEN
+            l_possible_moves(k) := p_empty_idx - p_size;
+            k := k + 1;
+        END IF;
+
+        IF MOD(p_empty_idx - 1, p_size) < p_size - 1 THEN
+            l_possible_moves(k) := p_empty_idx + 1;
+            k := k + 1;
+        END IF;
+
+        IF MOD(p_empty_idx - 1, p_size) > 0 THEN
+            l_possible_moves(k) := p_empty_idx - 1;
         END IF;
 
         RETURN l_possible_moves;
     END get_possible_moves;
 
-    ----------------------------------------------------------------------------
-    -- РЕАЛИЗАЦИЯ: БЛОК АВТОРИЗАЦИИ
-    ----------------------------------------------------------------------------
     FUNCTION register_user(
         p_username      IN VARCHAR2,
         p_password_hash IN VARCHAR2
@@ -337,19 +329,16 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     PROCEDURE update_last_seen(p_user_id IN USERS.USER_ID%TYPE)
     AS
     BEGIN
-        UPDATE USERS 
-        SET LAST_SEEN = SYSDATE 
+        UPDATE USERS
+        SET LAST_SEEN = SYSDATE
         WHERE USER_ID = p_user_id;
-        
+
         COMMIT;
     EXCEPTION
         WHEN OTHERS THEN
             NULL;
     END update_last_seen;
 
-    ----------------------------------------------------------------------------
-    -- РЕАЛИЗАЦИЯ: БЛОК УПРАВЛЕНИЯ ИГРОЙ
-    ----------------------------------------------------------------------------
     PROCEDURE cleanup_expired_games AS
     BEGIN
         FOR rec IN (
@@ -542,11 +531,11 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_board := state_to_table(l_current_state);
 
         FOR i IN l_board.FIRST..l_board.LAST LOOP
-            IF l_board(i) = 0 THEN 
-                l_empty_idx := i; 
+            IF l_board(i) = 0 THEN
+                l_empty_idx := i;
             END IF;
-            IF l_board(i) = p_tile_value THEN 
-                l_tile_idx := i; 
+            IF l_board(i) = p_tile_value THEN
+                l_tile_idx := i;
             END IF;
         END LOOP;
 
@@ -563,9 +552,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
             IF l_new_board_state = l_target_state THEN
                 IF l_game.OPTIMAL_MOVES > 0 THEN
-                    IF (l_game.MOVE_COUNT + 1) <= l_game.OPTIMAL_MOVES THEN 
+                    IF (l_game.MOVE_COUNT + 1) <= l_game.OPTIMAL_MOVES THEN
                         l_stars := 3;
-                    ELSIF (l_game.MOVE_COUNT + 1) <= l_game.OPTIMAL_MOVES * 1.2 THEN 
+                    ELSIF (l_game.MOVE_COUNT + 1) <= l_game.OPTIMAL_MOVES * 1.2 THEN
                         l_stars := 2;
                     ELSE l_stars := 1;
                     END IF;
@@ -584,7 +573,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             ELSE
                 DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id AND MOVE_ORDER > l_game.CURRENT_MOVE_ORDER;
 
-                INSERT INTO MOVE_HISTORY (MOVE_ID, GAME_ID, MOVE_ORDER, BOARD_STATE) 
+                INSERT INTO MOVE_HISTORY (MOVE_ID, GAME_ID, MOVE_ORDER, BOARD_STATE)
                 VALUES (MOVE_HISTORY_SEQ.NEXTVAL, p_session_id, l_game.CURRENT_MOVE_ORDER + 1, l_new_board_state);
 
                 UPDATE GAMES
@@ -632,9 +621,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         RETURN get_game_state_json(p_session_id);
     END redo_move;
 
-    ----------------------------------------------------------------------------
-    -- РЕАЛИЗАЦИЯ: БЛОК ПОДСКАЗОК, РЕЙТИНГОВ И ИЗОБРАЖЕНИЙ
-    ----------------------------------------------------------------------------
     FUNCTION get_leaderboards(
         p_filter_size       IN NUMBER,
         p_filter_difficulty IN NUMBER
@@ -670,15 +656,15 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                     FROM GAMES
                     WHERE STATUS = 'SOLVED'
         ]';
-    
-        IF p_filter_size > 0 THEN 
-            l_query := l_query || q'[ AND BOARD_SIZE = :size1]'; 
+
+        IF p_filter_size > 0 THEN
+            l_query := l_query || q'[ AND BOARD_SIZE = :size1]';
         END IF;
-        
-        IF p_filter_difficulty > 0 THEN 
-            l_query := l_query || q'[ AND SHUFFLE_MOVES = :diff1]'; 
+
+        IF p_filter_difficulty > 0 THEN
+            l_query := l_query || q'[ AND SHUFFLE_MOVES = :diff1]';
         END IF;
-    
+
         l_query := l_query || q'[
                 ) s
                 WHERE s.rn = 1
@@ -691,20 +677,20 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 FROM GAMES
                 WHERE STATUS IN ('ABANDONED', 'TIMEOUT')
         ]';
-    
-        IF p_filter_size > 0 THEN 
-            l_query := l_query || q'[ AND BOARD_SIZE = :size2]'; 
+
+        IF p_filter_size > 0 THEN
+            l_query := l_query || q'[ AND BOARD_SIZE = :size2]';
         END IF;
 
-        IF p_filter_difficulty > 0 THEN 
-            l_query := l_query || q'[ AND SHUFFLE_MOVES = :diff2]'; 
+        IF p_filter_difficulty > 0 THEN
+            l_query := l_query || q'[ AND SHUFFLE_MOVES = :diff2]';
         END IF;
-    
+
         l_query := l_query || q'[
                 GROUP BY USER_ID
             ) us ON u.USER_ID = us.USER_ID
         ]';
-    
+
         IF p_filter_size > 0 AND p_filter_difficulty > 0 THEN
             EXECUTE IMMEDIATE l_query INTO l_json USING p_filter_size, p_filter_difficulty, p_filter_size, p_filter_difficulty;
         ELSIF p_filter_size > 0 THEN
@@ -714,7 +700,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         ELSE
             EXECUTE IMMEDIATE l_query INTO l_json;
         END IF;
-    
+
         RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'), 'current_time_raw' VALUE TO_CHAR(SYSDATE, 'YYYY-MM-DD"T"HH24:MI:SS'));
     EXCEPTION
         WHEN OTHERS THEN
@@ -831,23 +817,23 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             WHERE IMAGE_ID = p_image_id AND USER_ID = p_user_id AND FILE_PATH IS NOT NULL;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN
-                l_file_path := NULL; 
+                l_file_path := NULL;
         END;
 
         UPDATE GAMES SET IMAGE_ID = NULL
         WHERE IMAGE_ID = p_image_id;
-        
+
         DELETE FROM USER_IMAGES
         WHERE IMAGE_ID = p_image_id AND USER_ID = p_user_id;
-        
+
         COMMIT;
 
         RETURN JSON_OBJECT(
-            'success' VALUE true, 
+            'success' VALUE true,
             'message' VALUE 'Image record deleted',
             'file_path_to_delete' VALUE l_file_path
         );
-        
+
     EXCEPTION
         WHEN OTHERS THEN
             ROLLBACK;
@@ -855,9 +841,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
     END delete_user_image;
 
-    ----------------------------------------------------------------------------
-    -- РЕАЛИЗАЦИЯ: СОЛВЕР И ПОДСКАЗКИ
-    ----------------------------------------------------------------------------
     FUNCTION get_hint(p_session_id IN GAMES.GAME_ID%TYPE) RETURN VARCHAR2
     AS
         l_current_state VARCHAR2(120);
@@ -890,38 +873,46 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_next_day       DATE := TRUNC(SYSDATE) + 1;
         l_count          NUMBER;
         l_target_state   VARCHAR2(120);
+        l_image_or_int   NUMBER;
+        l_image_id       NUMBER;
     BEGIN
         SELECT COUNT(*) INTO l_count FROM DAILY_CHALLENGES WHERE CHALLENGE_DATE = l_next_day;
-        
-        IF l_count > 0 THEN 
-            RETURN; 
+
+        IF l_count > 0 THEN
+            RETURN;
         END IF;
 
         l_board_size := TRUNC(DBMS_RANDOM.VALUE(3, 6));
-        
-        IF l_board_size = 3 THEN 
+
+        IF l_board_size = 3 THEN
             l_shuffle_moves := TRUNC(DBMS_RANDOM.VALUE(20, 31));
-        ELSE 
-            l_shuffle_moves := TRUNC(DBMS_RANDOM.VALUE(40, 71)); 
+        ELSE
+            l_shuffle_moves := TRUNC(DBMS_RANDOM.VALUE(40, 71));
         END IF;
-
+        
         l_target_state := get_target_state(l_board_size);
-
         l_shuffled_board := shuffle_board(l_target_state, l_shuffle_moves, l_board_size);
-
         l_optimal_moves := calculate_optimal_path_length(l_shuffled_board, l_board_size);
-
-        INSERT INTO DAILY_CHALLENGES (
-            CHALLENGE_ID, CHALLENGE_DATE, BOARD_SIZE, SHUFFLE_MOVES, BOARD_STATE, OPTIMAL_MOVES
-        ) VALUES (
-            DAILY_CHALLENGES_SEQ.NEXTVAL, l_next_day, l_board_size, l_shuffle_moves, l_shuffled_board, l_optimal_moves
-        );
+        
+        l_image_or_int := TRUNC(DBMS_RANDOM.VALUE(0, 1));
+        
+        IF l_image_or_int = 1 THEN
+            l_image_id := TRUNC(DBMS_RANDOM.VALUE(1, 3));
+            INSERT INTO DAILY_CHALLENGES (
+                CHALLENGE_ID, CHALLENGE_DATE, BOARD_SIZE, SHUFFLE_MOVES, IMAGE_ID, BOARD_STATE, OPTIMAL_MOVES
+            ) VALUES (
+                DAILY_CHALLENGES_SEQ.NEXTVAL, l_next_day, l_board_size, l_shuffle_moves, l_image_id, l_shuffled_board, l_optimal_moves
+            );
+        ELSE
+            INSERT INTO DAILY_CHALLENGES (
+                CHALLENGE_ID, CHALLENGE_DATE, BOARD_SIZE, SHUFFLE_MOVES, BOARD_STATE, OPTIMAL_MOVES
+            ) VALUES (
+                DAILY_CHALLENGES_SEQ.NEXTVAL, l_next_day, l_board_size, l_shuffle_moves, l_shuffled_board, l_optimal_moves
+            );
+        END IF;
         COMMIT;
     END create_daily_challenge;
 
-    ----------------------------------------------------------------------------
-    -- РЕАЛИЗАЦИЯ: ПРИВАТНЫЕ УТИЛИТЫ
-    ----------------------------------------------------------------------------
     FUNCTION shuffle_board(
         p_target_state IN VARCHAR2,
         p_shuffles IN NUMBER,
@@ -939,7 +930,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                     DECLARE
                         l_possible_moves GAME_MANAGER_PKG.t_board;
                     BEGIN
-                        
+
                         l_possible_moves := get_possible_moves(l_empty_idx, p_size);
 
                         DECLARE
@@ -1082,7 +1073,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         END IF;
     END calculate_optimal_path_length;
 
-    FUNCTION calculate_heuristic(p_board GAME_MANAGER_PKG.t_board) RETURN NUMBER 
+    FUNCTION calculate_heuristic(p_board GAME_MANAGER_PKG.t_board) RETURN NUMBER
     IS
         l_heuristic   NUMBER := 0;
         l_current_pos PLS_INTEGER;
@@ -1105,8 +1096,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         END LOOP;
         RETURN l_heuristic;
     END calculate_heuristic;
-    
-    FUNCTION state_to_table(p_state IN VARCHAR2) RETURN GAME_MANAGER_PKG.t_board 
+
+    FUNCTION state_to_table(p_state IN VARCHAR2) RETURN GAME_MANAGER_PKG.t_board
     IS
         l_string       VARCHAR2(120) := p_state || ',';
         l_comma_index  PLS_INTEGER;
@@ -1124,21 +1115,21 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         RETURN l_result_table;
     END state_to_table;
 
-    FUNCTION table_to_state(p_table IN GAME_MANAGER_PKG.t_board) RETURN VARCHAR2 
+    FUNCTION table_to_state(p_table IN GAME_MANAGER_PKG.t_board) RETURN VARCHAR2
     IS
         l_state VARCHAR2(120);
     BEGIN
-        IF p_table.COUNT = 0 THEN 
-            RETURN NULL; 
+        IF p_table.COUNT = 0 THEN
+            RETURN NULL;
         END IF;
-        
+
         FOR i IN p_table.FIRST..p_table.LAST LOOP
             l_state := l_state || p_table(i) || ',';
         END LOOP;
-        
+
         RETURN RTRIM(l_state, ',');
     END table_to_state;
-    
+
     FUNCTION is_state_in_path(
         p_path  GAME_MANAGER_PKG.t_path,
         p_board GAME_MANAGER_PKG.t_board
@@ -1152,7 +1143,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         END LOOP;
         RETURN FALSE;
     END is_state_in_path;
-    
+
     FUNCTION search(
         p_path      IN OUT NOCOPY GAME_MANAGER_PKG.t_path,
         p_g_cost    IN NUMBER,
@@ -1167,29 +1158,29 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     BEGIN
         l_current_node := p_path(p_path.COUNT);
         l_f_cost := p_g_cost + l_current_node.h_cost;
-        
-        IF l_f_cost > p_threshold THEN 
-            RETURN l_f_cost; 
+
+        IF l_f_cost > p_threshold THEN
+            RETURN l_f_cost;
         END IF;
-        
-        IF l_current_node.h_cost = 0 THEN 
-            o_solution := p_path; 
-            RETURN -1; 
+
+        IF l_current_node.h_cost = 0 THEN
+            o_solution := p_path;
+            RETURN -1;
         END IF;
-        
+
         FOR i IN 1 .. l_current_node.board_state.COUNT LOOP
-            IF l_current_node.board_state(i) = 0 THEN 
-                l_empty_idx := i; 
-                EXIT; 
+            IF l_current_node.board_state(i) = 0 THEN
+                l_empty_idx := i;
+                EXIT;
             END IF;
         END LOOP;
-        
+
         DECLARE
             l_possible_moves GAME_MANAGER_PKG.t_board;
         BEGIN
 
             l_possible_moves := get_possible_moves(l_empty_idx, g_board_size);
-            
+
             FOR i IN 1 .. l_possible_moves.COUNT LOOP
                 DECLARE
                     l_next_board GAME_MANAGER_PKG.t_board;
@@ -1201,23 +1192,23 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                     l_temp := l_next_board(l_possible_moves(i));
                     l_next_board(l_possible_moves(i)) := 0;
                     l_next_board(l_empty_idx) := l_temp;
-                    
+
                     IF NOT is_state_in_path(p_path, l_next_board) THEN
                         l_next_node.board_state := l_next_board;
                         l_next_node.g_cost := p_g_cost + 1;
                         l_next_node.h_cost := calculate_heuristic(l_next_board);
                         p_path(p_path.COUNT + 1) := l_next_node;
-                        
+
                         l_res := search(p_path, p_g_cost + 1, p_threshold, o_solution);
-                        
-                        IF l_res = -1 THEN 
-                            RETURN -1; 
+
+                        IF l_res = -1 THEN
+                            RETURN -1;
                         END IF;
-                        
-                        IF l_res < l_min_f THEN 
-                            l_min_f := l_res; 
+
+                        IF l_res < l_min_f THEN
+                            l_min_f := l_res;
                         END IF;
-                        
+
                         p_path.DELETE(p_path.COUNT);
                     END IF;
                 END;
@@ -1256,8 +1247,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
         RETURN NULL;
     END get_next_best_move;
-    
-    PROCEDURE init_target_positions(p_target_board GAME_MANAGER_PKG.t_board, p_size NUMBER) 
+
+    PROCEDURE init_target_positions(p_target_board GAME_MANAGER_PKG.t_board, p_size NUMBER)
     IS
     BEGIN
         g_board_size := p_size;
@@ -1275,10 +1266,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_username      USERS.USERNAME%TYPE;
         l_total_stars   NUMBER;
     BEGIN
-        -- Получаем имя пользователя
+
         SELECT USERNAME INTO l_username FROM USERS WHERE USER_ID = p_user_id;
 
-        -- Агрегируем звезды только из лучших попыток для каждой уникальной головоломки
         SELECT NVL(SUM(STARS_EARNED), 0)
         INTO l_total_stars
         FROM (
@@ -1291,16 +1281,14 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             FROM GAMES
             WHERE USER_ID = p_user_id AND STATUS = 'SOLVED'
         )
-        WHERE rn = 1; -- Отбираем только самые лучшие попытки
+        WHERE rn = 1;
 
-        -- Формируем итоговый JSON-ответ только с двумя полями
         RETURN JSON_OBJECT(
             'username'    VALUE l_username,
             'total_stars' VALUE l_total_stars
         );
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
-            -- Срабатывает, если передан неверный p_user_id
             RETURN JSON_OBJECT(
                 'username'    VALUE 'Unknown',
                 'total_stars' VALUE 0
@@ -1322,7 +1310,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             WHEN NO_DATA_FOUND THEN
                 RETURN '{"leaderboard": [], "current_time_raw": "' || TO_CHAR(SYSDATE, 'YYYY-MM-DD"T"HH24:MI:SS') || '"}';
         END;
-    
+
         WITH player_best_attempts AS (
             SELECT
                 g.USER_ID,
@@ -1358,9 +1346,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         FROM player_best_attempts pba
         JOIN USERS u ON pba.USER_ID = u.USER_ID
         WHERE pba.rn = 1;
-    
+
         RETURN JSON_OBJECT('leaderboard' VALUE JSON_QUERY(NVL(l_json, '[]'), '$'), 'current_time_raw' VALUE TO_CHAR(SYSDATE, 'YYYY-MM-DD"T"HH24:MI:SS'));
-    
+
     EXCEPTION
         WHEN OTHERS THEN
             RETURN '{"leaderboard": [], "current_time_raw": "' || TO_CHAR(SYSDATE, 'YYYY-MM-DD"T"HH24:MI:SS') || '"}';
