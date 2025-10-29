@@ -430,3 +430,24 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
     position: absolute;
     top: 1px;
 }
+
+@keyframes pulse-replay {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(74, 144, 226, 0.7);
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(74, 144, 226, 0);
+  }
+}
+
+.replay-btn.pulsing {
+  animation: pulse-replay 1.2s infinite;
+  position: relative;
+  z-index: 1;
+}

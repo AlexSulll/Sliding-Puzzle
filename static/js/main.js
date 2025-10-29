@@ -585,6 +585,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let timeStr = ui.formatTime(game.time);
                 let statusText = '';
                 let moves = game.moves;
+                const shouldPulse = game.stars > 0 && game.stars < 3;
 
                 if (game.status === 'SOLVED') {
                     statusText = game.stars > 0 ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` : 'Решено';
@@ -602,7 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${moves}</td>
                     <td>${timeStr}</td>
                     <td>${statusText}</td>
-                    <td><button class="replay-btn" data-game-id="${game.gameId}"><i class="fas fa-play"></i> Переиграть</button></td>
+                    <td><button class="replay-btn ${shouldPulse ? 'pulsing' : ''}" data-game-id="${game.gameId}"><i class="fas fa-play"></i> Переиграть</button></td>
                 `;
                 tbody.appendChild(row);
             });

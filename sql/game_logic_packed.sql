@@ -752,6 +752,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     AS
         l_json CLOB;
         l_query VARCHAR2(4000);
+        l_has_size_filter BOOLEAN := p_filter_size > 0;
+        l_has_difficulty_filter BOOLEAN := p_filter_difficulty > 0;
     BEGIN
         l_query := q'[
             SELECT JSON_ARRAYAGG(
@@ -769,37 +771,53 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             )
             FROM GAMES g
             WHERE g.USER_ID = :user_id
-            AND g.STATUS IN ('SOLVED', 'ABANDONED', 'TIMEOUT')
         ]';
-    
-        IF p_filter_size > 0 THEN
-            l_query := l_query || q'[ AND BOARD_SIZE = :size1]';
-        END IF;
-    
-        IF p_filter_difficulty > 0 THEN
-            l_query := l_query || q'[ AND g.SHUFFLE_MOVES = :difficulty ]';
-        END IF;
-    
+        
         IF p_filter_result = 'abandoned' THEN
-            l_query := l_query || q'[ AND g.STATUS IN ('ABANDONED', 'TIMEOUT') ]';
+            l_query := l_query || q'[
+                AND g.STATUS IN ('ABANDONED', 'TIMEOUT')
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM GAMES s
+                    WHERE s.USER_ID = g.USER_ID
+                      AND s.STATUS = 'SOLVED'
+                      AND COALESCE(TO_CHAR(s.CHALLENGE_ID), s.INITIAL_BOARD_STATE) = 
+                          COALESCE(TO_CHAR(g.CHALLENGE_ID), g.INITIAL_BOARD_STATE)
+                )
+            ]';
+        ELSE
+            l_query := l_query || q'[ AND g.STATUS IN ('SOLVED', 'ABANDONED', 'TIMEOUT') ]';
+            
+            IF p_filter_result IS NOT NULL THEN
+                IF p_filter_result = 'solved' THEN
+                    l_query := l_query || q'[ AND g.STATUS = 'SOLVED' ]';
+                ELSIF p_filter_result = 'timeout' THEN
+                    l_query := l_query || q'[ AND g.STATUS = 'TIMEOUT' ]';
+                END IF;
+            END IF;
+        END IF;
+        
+        IF l_has_size_filter THEN
+            l_query := l_query || q'[ AND g.BOARD_SIZE = :size_param ]';
+        END IF;
+        
+        IF l_has_difficulty_filter THEN
+            l_query := l_query || q'[ AND g.SHUFFLE_MOVES = :difficulty_param ]';
         END IF;
     
         CASE 
-            WHEN p_filter_size > 0 AND p_filter_difficulty > 0 THEN
+            WHEN l_has_size_filter AND l_has_difficulty_filter THEN
                 EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id, p_filter_size, p_filter_difficulty;
-            WHEN p_filter_size > 0 THEN
+            WHEN l_has_size_filter THEN
                 EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id, p_filter_size;
-            WHEN p_filter_difficulty > 0 THEN
+            WHEN l_has_difficulty_filter THEN
                 EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id, p_filter_difficulty;
             ELSE
                 EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id;
         END CASE;
     
-        IF l_json IS NULL OR DBMS_LOB.GETLENGTH(l_json) = 0 THEN
-            RETURN '[]';
-        END IF;
-    
-        RETURN l_json;
+        RETURN COALESCE(l_json, '[]');
+        
     EXCEPTION
         WHEN OTHERS THEN
             RETURN '[]';
