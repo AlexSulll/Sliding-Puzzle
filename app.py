@@ -21,7 +21,7 @@ def allowed_file(filename):
 DB_USER = "PUZZLEGAME"
 DB_PASSWORD = "qwertylf1"
 DB_DSN = "localhost:1521/XEPDB1"
-pool = oracledb.create_pool(user=DB_USER, password=DB_PASSWORD, dsn=DB_DSN, min=2, max=10, increment=1)
+pool = oracledb.create_pool(user=DB_USER, password=DB_PASSWORD, dsn=DB_DSN, min=2, max=20, increment=1)
 
 def get_db_connection():
     return pool.acquire()
@@ -151,7 +151,7 @@ def handle_action():
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_leaderboards', oracledb.DB_TYPE_CLOB, [params.get('size', 0), params.get('difficulty', 0)])
 
         elif action == 'get_game_history':
-            result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_game_history', oracledb.DB_TYPE_CLOB, [user_id])
+            result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_game_history', oracledb.DB_TYPE_CLOB, [user_id, params.get('size', 0), params.get('difficulty', 0), params.get('result', '0')])
         
         elif action == 'get_default_images':
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_default_images', oracledb.DB_TYPE_CLOB)
@@ -244,6 +244,21 @@ def upload_image():
                 str, 
                 [session['user_id'], mime_type, path_for_db, image_hash]
             )
+            db_response = json.loads(result_json_str)
+
+            if db_response.get('success'):
+                with open(file_save_path, "wb") as f:
+                    f.write(image_data)
+
+                old_path = db_response.get('old_file_path')
+                if old_path:
+                    try:
+                        old_filename = os.path.basename(old_path)
+                        old_filepath = os.path.join(app.config['UPLOAD_FOLDER'], old_filename)
+                        if os.path.exists(old_filepath):
+                            os.remove(old_filepath)
+                    except Exception as e:
+                        print(f"Could not delete old file: {e}")
             return result_json_str, 200, {'Content-Type': 'application/json'}
         finally:
             cursor.close()

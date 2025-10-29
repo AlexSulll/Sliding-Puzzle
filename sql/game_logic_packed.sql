@@ -77,7 +77,10 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
     ) RETURN CLOB;
 
     FUNCTION get_game_history(
-        p_user_id IN USERS.USER_ID%TYPE
+        p_user_id IN USERS.USER_ID%TYPE,
+        p_filter_size IN NUMBER,
+        p_filter_difficulty IN NUMBER,
+        p_filter_result IN VARCHAR2
     ) RETURN CLOB;
 
     FUNCTION save_user_image(
@@ -414,10 +417,16 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 l_start_state       := l_original_game.INITIAL_BOARD_STATE;
                 l_size              := l_original_game.BOARD_SIZE;
                 l_shuffles          := l_original_game.SHUFFLE_MOVES;
-                l_game_mode_to_use  := NVL(p_game_mode, l_original_game.GAME_MODE);
-                l_image_id_to_use   := NVL(p_image_id, l_original_game.IMAGE_ID);
                 l_challenge_id      := l_original_game.CHALLENGE_ID;
                 l_optimal_moves     := l_original_game.OPTIMAL_MOVES;
+
+                IF p_image_id IS NOT NULL THEN
+                    l_image_id_to_use := p_image_id;
+                    l_game_mode_to_use := 'IMAGE';
+                ELSE
+                    l_image_id_to_use  := l_original_game.IMAGE_ID;
+                    l_game_mode_to_use := l_original_game.GAME_MODE;
+                END IF;
             END;
         ELSIF p_is_daily_challenge THEN
             DECLARE
@@ -445,6 +454,20 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             END;
         END IF;
 
+        IF l_image_id_to_use IS NOT NULL THEN
+            DECLARE
+                l_image_count NUMBER;
+            BEGIN
+                SELECT COUNT(*) INTO l_image_count 
+                FROM USER_IMAGES 
+                WHERE IMAGE_ID = l_image_id_to_use;
+                
+                IF l_image_count = 0 THEN
+                    l_image_id_to_use := NULL;
+                END IF;
+            END;
+        END IF;
+
         INSERT INTO GAMES (
             GAME_ID, USER_ID, STATUS, BOARD_SIZE, SHUFFLE_MOVES, GAME_MODE, MOVE_COUNT,
             IMAGE_ID, CHALLENGE_ID, START_TIME, COMPLETED_AT, STARS_EARNED,
@@ -460,7 +483,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         VALUES (MOVE_HISTORY_SEQ.NEXTVAL, l_game_id, 0, l_start_state);
 
         COMMIT;
+
         RETURN get_game_state_json(l_game_id, l_optimal_moves);
+        
     END start_new_game;
 
     FUNCTION abandon_game(p_session_id IN GAMES.GAME_ID%TYPE)
@@ -718,31 +743,74 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             RETURN '{"leaderboard": [], "current_time_raw": "' || TO_CHAR(SYSDATE, 'YYYY-MM-DD"T"HH24:MI:SS') || '"}';
     END get_leaderboards;
 
-    FUNCTION get_game_history(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB
+    FUNCTION get_game_history(
+        p_user_id IN USERS.USER_ID%TYPE,
+        p_filter_size IN NUMBER,
+        p_filter_difficulty IN NUMBER,
+        p_filter_result IN VARCHAR2
+    ) RETURN CLOB
     AS
         l_json CLOB;
+        l_query VARCHAR2(4000);
     BEGIN
-        SELECT JSON_ARRAYAGG(
-            JSON_OBJECT(
-                'gameId' VALUE g.GAME_ID,
-                'date'   VALUE TO_CHAR(g.START_TIME, 'DD.MM.YYYY HH24:MI'),
-                'size'   VALUE g.BOARD_SIZE,
-                'moves'  VALUE g.MOVE_COUNT,
-                'time'   VALUE GREATEST(ROUND((g.COMPLETED_AT - g.START_TIME) * 86400), 1),
-                'status' VALUE g.STATUS,
-                'stars'  VALUE g.STARS_EARNED
-            ) ORDER BY g.START_TIME DESC
-            RETURNING CLOB
-        )
-        INTO l_json
-        FROM GAMES g
-        WHERE g.USER_ID = p_user_id AND g.STATUS IN ('SOLVED', 'ABANDONED', 'TIMEOUT');
-
+        l_query := q'[
+            SELECT JSON_ARRAYAGG(
+                JSON_OBJECT(
+                    'gameId' VALUE g.GAME_ID,
+                    'date'   VALUE TO_CHAR(g.START_TIME, 'DD.MM.YYYY HH24:MI'),
+                    'size'   VALUE g.BOARD_SIZE,
+                    'moves'  VALUE g.MOVE_COUNT,
+                    'time'   VALUE GREATEST(ROUND((g.COMPLETED_AT - g.START_TIME) * 86400), 1),
+                    'status' VALUE g.STATUS,
+                    'stars'  VALUE g.STARS_EARNED,
+                    'shuffleMoves' VALUE g.SHUFFLE_MOVES
+                ) ORDER BY g.START_TIME DESC
+                RETURNING CLOB
+            )
+            FROM GAMES g
+            WHERE g.USER_ID = :user_id
+            AND g.STATUS IN ('SOLVED', 'ABANDONED', 'TIMEOUT')
+        ]';
+    
+        -- Фильтр по размеру поля
+        IF p_filter_size > 0 THEN
+            l_query := l_query || q'[ AND BOARD_SIZE = :size1]';
+        END IF;
+    
+        -- Фильтр по сложности (SHUFFLE_MOVES)
+        IF p_filter_difficulty > 0 THEN
+            l_query := l_query || q'[ AND g.SHUFFLE_MOVES = :difficulty ]';
+        END IF;
+    
+        -- Фильтр по результату
+        IF p_filter_result != '0' THEN
+            IF p_filter_result = 'completed' THEN
+                l_query := l_query || q'[ AND g.STATUS = 'SOLVED' ]';
+            ELSIF p_filter_result = 'abandoned' THEN
+                l_query := l_query || q'[ AND g.STATUS IN ('ABANDONED', 'TIMEOUT') ]';
+            END IF;
+        END IF;
+    
+        -- Выполнение динамического запроса
+        CASE 
+            WHEN p_filter_size > 0 AND p_filter_difficulty > 0 THEN
+                EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id, p_filter_size, p_filter_difficulty;
+            WHEN p_filter_size > 0 THEN
+                EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id, p_filter_size;
+            WHEN p_filter_difficulty > 0 THEN
+                EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id, p_filter_difficulty;
+            ELSE
+                EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id;
+        END CASE;
+    
         IF l_json IS NULL OR DBMS_LOB.GETLENGTH(l_json) = 0 THEN
             RETURN '[]';
         END IF;
-
+    
         RETURN l_json;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RETURN '[]';
     END get_game_history;
 
     FUNCTION save_user_image(
@@ -752,31 +820,59 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         p_image_hash IN VARCHAR2
     ) RETURN VARCHAR2
     AS
-        l_count       NUMBER;
-        l_new_image_id USER_IMAGES.IMAGE_ID%TYPE;
+        l_image_id      USER_IMAGES.IMAGE_ID%TYPE;
+        l_old_file_path USER_IMAGES.FILE_PATH%TYPE := NULL; -- Переменная для старого пути
     BEGIN
-        SELECT COUNT(*) INTO l_count FROM USER_IMAGES WHERE USER_ID = p_user_id AND IMAGE_HASH = p_image_hash;
-        IF l_count > 0 THEN
-            RETURN '{"success": true, "status": "duplicate"}';
-        END IF;
+        -- Попробовать найти существующую картинку по хэшу
+        SELECT IMAGE_ID, FILE_PATH
+        INTO l_image_id, l_old_file_path -- Сохраняем и ID, и СТАРЫЙ ПУТЬ
+        FROM USER_IMAGES
+        WHERE USER_ID = p_user_id AND IMAGE_HASH = p_image_hash;
 
-        INSERT INTO USER_IMAGES (IMAGE_ID, USER_ID, MIME_TYPE, IMAGE_DATA, FILE_PATH, IMAGE_HASH, UPLOADED_AT)
-        VALUES (USER_IMAGES_SEQ.NEXTVAL, p_user_id, p_mime_type, NULL, p_file_path, p_image_hash, SYSDATE)
-        RETURNING IMAGE_ID INTO l_new_image_id;
+        -- Нашли: файл был удален или загружен заново.
+        -- Обновляем путь на новый и дату загрузки.
+        UPDATE USER_IMAGES
+        SET FILE_PATH = p_file_path, UPLOADED_AT = SYSDATE
+        WHERE IMAGE_ID = l_image_id;
 
         COMMIT;
-
+        
+        -- === FIX: ВОЗВРАЩАЕМ УСПЕХ №1 (для случая UPDATE) ===
         RETURN JSON_OBJECT(
-            'success'  VALUE true,
-            'status'   VALUE 'uploaded',
-            'newImage' VALUE JSON_OBJECT(
-                'id'   VALUE l_new_image_id,
+            'success'         VALUE true,
+            'status'          VALUE 'uploaded',
+            'old_file_path'   VALUE l_old_file_path,
+            'newImage'        VALUE JSON_OBJECT(
+                'id'   VALUE l_image_id,
                 'path' VALUE p_file_path
             )
         );
+
     EXCEPTION
-        WHEN DUP_VAL_ON_INDEX THEN
-            RETURN '{"success": true, "status": "duplicate"}';
+        WHEN NO_DATA_FOUND THEN
+            -- Не нашли: это действительно новая картинка. Вставляем.
+            INSERT INTO USER_IMAGES (IMAGE_ID, USER_ID, MIME_TYPE, FILE_PATH, IMAGE_HASH, UPLOADED_AT)
+            VALUES (USER_IMAGES_SEQ.NEXTVAL, p_user_id, p_mime_type, p_file_path, p_image_hash, SYSDATE)
+            RETURNING IMAGE_ID INTO l_image_id;
+
+            COMMIT;
+            
+            -- === FIX: ВОЗВРАЩАЕМ УСПЕХ №2 (для случая INSERT) ===
+            RETURN JSON_OBJECT(
+                'success'         VALUE true,
+                'status'          VALUE 'uploaded',
+                'old_file_path'   VALUE NULL, -- Это новый файл, старого пути нет
+                'newImage'        VALUE JSON_OBJECT(
+                    'id'   VALUE l_image_id,
+                    'path' VALUE p_file_path
+                )
+            );
+            
+        WHEN OTHERS THEN
+            ROLLBACK;
+            RETURN '{"success": false, "error": "' || SQLERRM || '"}';
+            
+    -- === FIX: Лишний END; убран, теперь здесь правильный END <имя_функции> ===
     END save_user_image;
 
     FUNCTION get_user_images(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB
@@ -985,6 +1081,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_progress              NUMBER := 0;
         l_expiration_time       DATE;
         l_time_remaining_sec    NUMBER;
+        l_image_missing         NUMBER := 0;
     BEGIN
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_game_id;
 
@@ -1028,6 +1125,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 l_image_url := '/api/image/' || l_game.IMAGE_ID;
             END IF;
         ELSE
+            IF l_game.GAME_MODE = 'IMAGE' THEN
+                l_image_missing := 1;
+            END IF;
             l_image_url := NULL;
         END IF;
 
@@ -1054,6 +1154,10 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 'stars'      VALUE l_game.STARS_EARNED,
                 'gameMode'   VALUE l_game.GAME_MODE,
                 'progress'   VALUE l_progress,
+                'imageMissing' VALUE CASE
+                                WHEN l_image_missing = 1 THEN 'true'
+                                ELSE 'false'
+                                END FORMAT JSON,
                 'duration'   VALUE CASE
                                 WHEN l_game.STATUS = 'SOLVED'
                                 THEN GREATEST(ROUND((l_game.COMPLETED_AT - l_game.START_TIME) * 86400), 1)

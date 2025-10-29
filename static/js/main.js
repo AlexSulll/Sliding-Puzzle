@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentBoardState: [],
         boardSize: 0,
         isLoading: false,
+        currentReplayId: null,
     };
 
     const DOMElements = {
@@ -74,7 +75,11 @@ document.addEventListener('DOMContentLoaded', () => {
         restartBtn: document.getElementById('restart-btn'),
         progressCounter: document.getElementById('progress-counter'),
         loadingOverlay: document.getElementById('loading-overlay'),
-        loadingText: document.getElementById('loading-text')
+        loadingText: document.getElementById('loading-text'),
+        historyFilterSize: document.getElementById('history-filter-size'),
+        historyFilterDifficulty: document.getElementById('history-filter-difficulty'),
+        historyFilterResult: document.getElementById('history-filter-result'),
+        applyHistoryFiltersBtn: document.getElementById('apply-history-filters-btn'),
     };
 
     // === API Module: Simplified with a single action endpoint ===
@@ -137,6 +142,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // === Game Logic Module: Uses the simplified API ===
     const game = {
         start: async (forceNew = false, replayGameId = null) => {
+            if (replayGameId) {
+                state.currentReplayId = replayGameId;
+            }
+
             const size = state.isDaily ? 4 : parseInt(DOMElements.boardSizeSelect.value, 10);
             const settings = {
                 isDailyChallenge: state.isDaily,
@@ -145,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 size: size,
                 difficulty: state.isDaily ? 60 : parseInt(DOMElements.difficultySelect.value, 10),
                 forceNew: forceNew,
-                replayGameId: replayGameId
+                replayGameId: state.currentReplayId
             };
             
             const gameState = await api.performAction('start', settings, 'Генерация игры...'); // <-- Добавляем текст
@@ -158,14 +167,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     const randomImageId = Math.floor(Math.random() * 3) + 1;
                     state.imageId = randomImageId;
                     state.gameMode = 'IMAGE';
-                    game.start(true, null);
+                    game.start(true, state.currentReplayId);
                 } else {
                     // 2. Второе предложение: загрузить свою.
                     const choiceUpload = confirm("Хотите загрузить новую картинку?");
                     if (choiceUpload) {
                         // Пользователь согласился
                         state.isUploadingForGameStart = true;
-                        DOMElements.imageUpload.click();
+                        DOMElements.uploadLabel.click();
                     } else {
                         // 3. Третье предложение: сыграть с числами.
                         const choiceNumbers = confirm("Тогда продолжить с числами?");
@@ -173,9 +182,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             // Пользователь согласился
                             state.imageId = null;
                             state.gameMode = 'INTS';
-                            game.start(true, null);
+                            game.start(true, state.currentReplayId);
                         } else {
                             // Пользователь от всего отказался, возвращаем на экран настроек.
+                            state.currentReplayId = null;
                             ui.showScreen('settings');
                         }
                     }
@@ -195,6 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (gameState && gameState.sessionId) {
+                state.currentReplayId = null;
                 ui.showScreen('game');
                 ui.render(gameState);
                 timer.start(gameState.timeRemaining);
@@ -213,8 +224,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const gameState = await api.performAction('redo', {}, 'Возврат хода...'); // <-- Пример
             if (gameState) ui.render(gameState); 
         },
-        abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.showScreen('settings'); },
-        playAgain: () => { timer.stop(); ui.showScreen('settings'); },
+        abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.resetSettingsToDefault(); ui.showScreen('settings'); },
+        playAgain: () => { timer.stop(); ui.resetSettingsToDefault(); ui.showScreen('settings'); },
         hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
         timeout: async () => { await api.performAction('timeout'); timer.stop(); ui.showScreen('settings'); },
         restart: async () => { 
@@ -343,7 +354,6 @@ document.addEventListener('DOMContentLoaded', () => {
             DOMElements.imageUpload.value = '';
         },
         handleImageUpload: async (event) => {
-            DOMElements.customImageName.textContent = '';
             const file = event.target.files[0];
             if (!file) return;
 
@@ -366,9 +376,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     state.isUploadingForGameStart = false;
                     state.imageId = res.newImage.id;
                     state.gameMode = 'IMAGE';
-                    game.start(true, null);
+                    await ui.loadImages();
+                    game.start(true, state.currentReplayId);
                 } else {
-                    ui.loadImages();
+                    await ui.loadImages();
                 }
             } else if (res.status === 'duplicate') {
                 DOMElements.customImageName.textContent = 'Такая картинка уже есть.';
@@ -509,7 +520,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const maxLength = 17;
                 const truncatedUsername = player.user.length > maxLength ? player.user.slice(0, maxLength) + '...' : player.user;
 
-                const place = ['🏆', '<i class="fas fa-medal" style="color: silver;"></i>', '<i class="fas fa-medal" style="color: #cd7f32;"></i>'][index] || `#${index + 1}`;
+                const place = ['<span class="trophy-icon">🏆</span>',
+                            '<span class="trophy-icon"><i class="fas fa-medal" style="color: silver;"></i></span>',
+                            '<span class="trophy-icon"><i class="fas fa-medal" style="color: #cd7f32;"></i> </span>'][index] || `#${index + 1}`;
 
                 // Вызываем нашу новую функцию-помощник с двумя аргументами
                 const statusHtml = ui.formatPlayerStatus(player.last_seen_raw, currentDbTimeRaw);
@@ -545,12 +558,23 @@ document.addEventListener('DOMContentLoaded', () => {
         },
 
         renderGameHistory: async () => {
-            const historyData = await api.performAction('get_game_history');
+            const size = DOMElements.historyFilterSize.value;
+            const difficulty = parseInt(DOMElements.historyFilterDifficulty.value, 10);
+            const result = DOMElements.historyFilterResult.value;
+            
+            console.log('Filter params:', { size, difficulty, result }); // ДЛЯ ОТЛАДКИ
+            
+            const historyData = await api.performAction('get_game_history', {
+                size: size,
+                difficulty: difficulty,
+                result: result
+            });
+            
             const container = DOMElements.historyTableContainer;
             container.innerHTML = ''; 
 
             if (!historyData || historyData.length === 0) {
-                container.innerHTML = '<p><i>Вы еще не сыграли ни одной игры</i></p>';
+                container.innerHTML = '<p><i>Нет игр, соответствующих выбранным фильтрам</i></p>';
                 return;
             }
 
@@ -586,6 +610,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             container.appendChild(table);
         },
+
         
         renderDailyLeaderboard: async () => {
             const data = await api.performAction('get_daily_leaderboard');
@@ -620,9 +645,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             data.leaderboard.forEach((player, index) => {
                 const row = document.createElement('tr');
-                const place = ['<span class="trophy-icon">🏆</span>',
-                            '<span class="trophy-icon"><i class="fas fa-medal" style="color: silver;"></i></span>',
-                            '<span class="trophy-icon"><i class="fas fa-medal" style="color: #cd7f32;"></i> </span>'][index] || `#${index + 1}`;
+                const place = ['<span class="trophy-icon">🏆</span>', 
+                            '<span class="trophy-icon">🥈</span>', 
+                            '<span class="trophy-icon">🥉</span>'][index] || `#${index + 1}`;
                 
                 // Вызываем нашу новую функцию-помощник с двумя аргументами
                 const statusHtml = ui.formatPlayerStatus(player.last_seen_raw, currentDbTimeRaw);
@@ -639,6 +664,21 @@ document.addEventListener('DOMContentLoaded', () => {
             container.appendChild(table);
         },
         highlightHint: (tileValue) => { const tile = DOMElements.gameBoard.querySelector(`[data-value="${tileValue}"]`); if (tile) { tile.classList.add('hint'); setTimeout(() => tile.classList.remove('hint'), 1000); } },
+        resetSettingsToDefault: () => {
+            // 1. Сбрасываем внутреннее состояние
+            state.gameMode = 'INTS';
+            state.imageId = null;
+            state.imageUrl = null;
+            
+            // 2. Обновляем UI: выбираем "Числа"
+            document.getElementById('mode-numbers').checked = true;
+            
+            // 3. Скрываем блок выбора картинок
+            DOMElements.imageSelection.classList.add('hidden');
+            
+            // 4. Снимаем выделение со всех картинок
+            document.querySelectorAll('.preview-img.selected').forEach(img => img.classList.remove('selected'));
+        },
     };
     
     // === Timer Module ===
@@ -687,7 +727,7 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.showRegisterLink.addEventListener('click', (e) => { e.preventDefault(); DOMElements.loginView.classList.add('hidden'); DOMElements.registerView.classList.remove('hidden'); DOMElements.authError.textContent = ''; });
         DOMElements.showLoginLink.addEventListener('click', (e) => { e.preventDefault(); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); DOMElements.authError.textContent = ''; });
         DOMElements.navButtons.forEach(btn => btn.addEventListener('click', () => ui.showScreen(btn.dataset.screen)));
-        
+        DOMElements.applyHistoryFiltersBtn.addEventListener('click', ui.renderGameHistory);
         DOMElements.dailyCheck.addEventListener('change', (e) => {
             if (e.target.checked) {
                 ui.showScreen('daily-challenge');
@@ -700,24 +740,20 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.modeRadios.forEach(radio => radio.addEventListener('change', (e) => {
             state.gameMode = e.target.value;
             DOMElements.imageSelection.classList.toggle('hidden', state.gameMode !== 'IMAGE');
-            if (state.gameMode === 'IMAGE') {
-                const firstDefaultImage = DOMElements.defaultImagePreviews.querySelector('.preview-img');
-                if (firstDefaultImage) {
-                    document.querySelectorAll('.preview-img').forEach(img => img.classList.remove('selected'));
-                    firstDefaultImage.classList.add('selected');
-                    state.imageUrl = firstDefaultImage.dataset.src;
-                    state.imageId = firstDefaultImage.dataset.imageId;
-                    DOMElements.customImageName.textContent = '';
-                    DOMElements.imageUpload.value = '';
-                }
-            } else if (state.gameMode === 'INTS') {
+            if (state.gameMode === 'INTS') {
                 state.imageUrl = null;
                 state.imageId = null;
                 document.querySelectorAll('.preview-img.selected').forEach(img => img.classList.remove('selected'));
             }
         }));
         DOMElements.imageUpload.addEventListener('change', ui.handleImageUpload);
-        DOMElements.startBtn.addEventListener('click', () => game.start(false, null));
+        DOMElements.startBtn.addEventListener('click', () => {
+            if (state.gameMode === 'IMAGE' && !state.imageId) {
+                alert('Пожалуйста, выберите картинку для игры.');
+                return;
+            }
+            game.start(false, null);
+        });
         DOMElements.gameBoard.addEventListener('click', (e) => { const tile = e.target.closest('.tile'); if (tile && tile.dataset.value) game.move(parseInt(tile.dataset.value, 10)); });
         DOMElements.hintBtn.addEventListener('click', game.hint);
         DOMElements.undoBtn.addEventListener('click', game.undo);
