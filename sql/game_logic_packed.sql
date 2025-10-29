@@ -772,17 +772,14 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             AND g.STATUS IN ('SOLVED', 'ABANDONED', 'TIMEOUT')
         ]';
     
-        -- Фильтр по размеру поля
         IF p_filter_size > 0 THEN
             l_query := l_query || q'[ AND BOARD_SIZE = :size1]';
         END IF;
     
-        -- Фильтр по сложности (SHUFFLE_MOVES)
         IF p_filter_difficulty > 0 THEN
             l_query := l_query || q'[ AND g.SHUFFLE_MOVES = :difficulty ]';
         END IF;
     
-        -- Фильтр по результату
         IF p_filter_result != '0' THEN
             IF p_filter_result = 'completed' THEN
                 l_query := l_query || q'[ AND g.STATUS = 'SOLVED' ]';
@@ -791,7 +788,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             END IF;
         END IF;
     
-        -- Выполнение динамического запроса
         CASE 
             WHEN p_filter_size > 0 AND p_filter_difficulty > 0 THEN
                 EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id, p_filter_size, p_filter_difficulty;
