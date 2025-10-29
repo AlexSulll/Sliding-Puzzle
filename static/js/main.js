@@ -78,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingText: document.getElementById('loading-text'),
         historyFilterSize: document.getElementById('history-filter-size'),
         historyFilterDifficulty: document.getElementById('history-filter-difficulty'),
-        historyFilterResult: document.getElementById('history-filter-result'),
+        historyFilterUnfinished: document.getElementById('history-filter-unfinished'),
         applyHistoryFiltersBtn: document.getElementById('apply-history-filters-btn'),
     };
 
@@ -560,14 +560,12 @@ document.addEventListener('DOMContentLoaded', () => {
         renderGameHistory: async () => {
             const size = DOMElements.historyFilterSize.value;
             const difficulty = parseInt(DOMElements.historyFilterDifficulty.value, 10);
-            const result = DOMElements.historyFilterResult.value;
-            
-            console.log('Filter params:', { size, difficulty, result }); // ДЛЯ ОТЛАДКИ
+            const unfinished = DOMElements.historyFilterUnfinished.checked ? 'abandoned' : '0';
             
             const historyData = await api.performAction('get_game_history', {
                 size: size,
                 difficulty: difficulty,
-                result: result
+                result: unfinished
             });
             
             const container = DOMElements.historyTableContainer;

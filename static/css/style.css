@@ -38,9 +38,6 @@ body {
     transition: all 0.3s ease-in-out;
     margin: 0 auto;
     position: absolute;
-    /* top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%); */
 }
 
 .main-header {
@@ -147,8 +144,7 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 
 .custom-select-wrapper { position: relative; }
 .custom-select-wrapper::after { content: '\f078'; font-family: 'Font Awesome 6 Free'; font-weight: 900; position: absolute; top: 50%; right: 15px; transform: translateY(-50%); pointer-events: none; transition: transform 0.2s; }
-.custom-select-wrapper select { width: 100%; padding: 12px 40px 12px 15px; border-radius: 8px; border: 1px solid var(--border-color); font-size: 1rem; appearance: none; -webkit-appearance: none; background-color: white; cursor: pointer; }
-.custom-select-wrapper select:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(90, 103, 216, 0.2); outline: none; }
+.custom-select-wrapper select { width: 100%; padding: 12px 40px 12px 15px; border-radius: 8px; border: 1px solid var(--border-color); font-size: 1rem; appearance: none; -webkit-appearance: none; background-color: white; cursor: pointer; text-align: center; text-align-last: center;}
 
 /* --- ИГРОВОЙ ЭКРАН --- */
 #active-game-view.hidden { display: none; }
@@ -171,14 +167,15 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 .hidden { display: none !important; }
 
 /* --- ЭКРАНЫ ИСТОРИИ ИГР И РЕЙТИНГОВ --- */
-.leaderboard-filters { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; justify-content: center; }
+#leaderboard-screen .custom-select-wrapper, #history-screen .custom-select-wrapper { flex: 1; }
+.leaderboard-filters { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; justify-content: flex-start; width: fit-content; min-width: 100%; }
 #leaderboard-tables { max-height: 50vh; overflow-y: auto; overflow-x: hidden; border-radius: 8px; margin-top: 15px; }
 #leaderboard-tables h3 { margin-bottom: 15px; text-align: center; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; position: sticky; top: 0; background: var(--container-bg); z-index: 3; padding: 10px 0; margin: 0 0 15px 0; }
 #history-table-container { max-height: 58vh; overflow-y: auto; overflow-x: hidden; border-radius: 8px; margin-top: 15px; }
 #leaderboard-tables table, .history-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; background-color: var(--container-bg); border-radius: 8px; box-shadow: var(--shadow); }
 #leaderboard-tables thead th, .history-table thead { position: sticky; top: 0; z-index: 2; }
 #leaderboard-tables th, #leaderboard-tables td, .history-table th, .history-table td { padding: 12px 15px; text-align: center; vertical-align: middle; border-bottom: 1px solid var(--border-color); }
-#leaderboard-tables th, .history-table th { background-color: #5a67d8; color: white; font-weight: 600; }
+#leaderboard-tables th, .history-table th { background-color: var(--primary-color); color: white; font-weight: 600; }
 #leaderboard-tables tr:last-child td, .history-table tr:last-child td { border-bottom: none; }
 #leaderboard-tables tr:hover, .history-table tr:hover { background-color: #f7fafc; }
 #leaderboard-tables td, .history-table td { display: table-cell; text-align: center; color: var(--text-color);}
@@ -187,16 +184,6 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
 #leaderboard-tables::-webkit-scrollbar-track, #history-table-container::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
 #leaderboard-tables::-webkit-scrollbar-thumb, #history-table-container::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
 #leaderboard-tables::-webkit-scrollbar-thumb:hover, #history-table-container::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
-
-/* #daily-leaderboard-container {
-    max-height: 50vh;
-    overflow-y: auto;
-    overflow-x: auto;
-    border-radius: 15px;
-    margin-top: 15px;
-    border: 1px solid var(--border-color);
-    padding: 10px;
-} */
 
 #daily-leaderboard-container table {
     width: 100%;
@@ -361,4 +348,85 @@ h2 { font-size: 1.75rem; color: var(--text-color); margin-bottom: 20px; margin-t
     margin-top: 15px;
     font-size: 1.2rem;
     font-weight: 500;
+}
+
+.checkbox-wrapper {
+    display: inline-flex;
+    align-items: center;
+    padding: 0px 4px;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+    position: relative;
+    cursor: pointer;
+}
+
+.checkbox-wrapper:hover::after {
+    content: "Показать только нерешённые игры";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(90, 103, 216, 0.75);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 1000;
+    margin-top: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+
+.checkbox-wrapper:hover::before {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 4px solid transparent;
+    border-bottom-color: var(--primary-color);
+    margin-top: 0;
+    z-index: 1001;
+}
+
+.custom-checkbox {
+    display: none;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.checkmark {
+    width: 20px;
+    height: 20px;
+    border: 5px solid var(--border-color);
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.custom-checkbox:checked + .checkbox-label .checkmark {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.custom-checkbox:checked + .checkbox-label .checkmark::after {
+    content: '';
+    width: 6px;
+    height: 10px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+    position: absolute;
+    top: 1px;
 }

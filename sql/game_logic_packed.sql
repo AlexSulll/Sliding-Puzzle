@@ -780,12 +780,8 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             l_query := l_query || q'[ AND g.SHUFFLE_MOVES = :difficulty ]';
         END IF;
     
-        IF p_filter_result != '0' THEN
-            IF p_filter_result = 'completed' THEN
-                l_query := l_query || q'[ AND g.STATUS = 'SOLVED' ]';
-            ELSIF p_filter_result = 'abandoned' THEN
-                l_query := l_query || q'[ AND g.STATUS IN ('ABANDONED', 'TIMEOUT') ]';
-            END IF;
+        IF p_filter_result = 'abandoned' THEN
+            l_query := l_query || q'[ AND g.STATUS IN ('ABANDONED', 'TIMEOUT') ]';
         END IF;
     
         CASE 
