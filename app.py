@@ -244,6 +244,21 @@ def upload_image():
                 str, 
                 [session['user_id'], mime_type, path_for_db, image_hash]
             )
+            db_response = json.loads(result_json_str)
+
+            if db_response.get('success'):
+                with open(file_save_path, "wb") as f:
+                    f.write(image_data)
+
+                old_path = db_response.get('old_file_path')
+                if old_path:
+                    try:
+                        old_filename = os.path.basename(old_path)
+                        old_filepath = os.path.join(app.config['UPLOAD_FOLDER'], old_filename)
+                        if os.path.exists(old_filepath):
+                            os.remove(old_filepath)
+                    except Exception as e:
+                        print(f"Could not delete old file: {e}")
             return result_json_str, 200, {'Content-Type': 'application/json'}
         finally:
             cursor.close()

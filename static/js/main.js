@@ -726,6 +726,7 @@ document.addEventListener('DOMContentLoaded', () => {
             DOMElements.imageSelection.classList.toggle('hidden', state.gameMode !== 'IMAGE');
             if (state.gameMode === 'INTS') {
                 state.imageUrl = null;
+                state.imageId = null;
                 document.querySelectorAll('.preview-img.selected').forEach(img => img.classList.remove('selected'));
             }
         }));

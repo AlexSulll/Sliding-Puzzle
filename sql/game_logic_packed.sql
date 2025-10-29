@@ -774,31 +774,59 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         p_image_hash IN VARCHAR2
     ) RETURN VARCHAR2
     AS
-        l_count       NUMBER;
-        l_new_image_id USER_IMAGES.IMAGE_ID%TYPE;
+        l_image_id      USER_IMAGES.IMAGE_ID%TYPE;
+        l_old_file_path USER_IMAGES.FILE_PATH%TYPE := NULL; -- Переменная для старого пути
     BEGIN
-        SELECT COUNT(*) INTO l_count FROM USER_IMAGES WHERE USER_ID = p_user_id AND IMAGE_HASH = p_image_hash;
-        IF l_count > 0 THEN
-            RETURN '{"success": true, "status": "duplicate"}';
-        END IF;
+        -- Попробовать найти существующую картинку по хэшу
+        SELECT IMAGE_ID, FILE_PATH
+        INTO l_image_id, l_old_file_path -- Сохраняем и ID, и СТАРЫЙ ПУТЬ
+        FROM USER_IMAGES
+        WHERE USER_ID = p_user_id AND IMAGE_HASH = p_image_hash;
 
-        INSERT INTO USER_IMAGES (IMAGE_ID, USER_ID, MIME_TYPE, IMAGE_DATA, FILE_PATH, IMAGE_HASH, UPLOADED_AT)
-        VALUES (USER_IMAGES_SEQ.NEXTVAL, p_user_id, p_mime_type, NULL, p_file_path, p_image_hash, SYSDATE)
-        RETURNING IMAGE_ID INTO l_new_image_id;
+        -- Нашли: файл был удален или загружен заново.
+        -- Обновляем путь на новый и дату загрузки.
+        UPDATE USER_IMAGES
+        SET FILE_PATH = p_file_path, UPLOADED_AT = SYSDATE
+        WHERE IMAGE_ID = l_image_id;
 
         COMMIT;
-
+        
+        -- === FIX: ВОЗВРАЩАЕМ УСПЕХ №1 (для случая UPDATE) ===
         RETURN JSON_OBJECT(
-            'success'  VALUE true,
-            'status'   VALUE 'uploaded',
-            'newImage' VALUE JSON_OBJECT(
-                'id'   VALUE l_new_image_id,
+            'success'         VALUE true,
+            'status'          VALUE 'uploaded',
+            'old_file_path'   VALUE l_old_file_path,
+            'newImage'        VALUE JSON_OBJECT(
+                'id'   VALUE l_image_id,
                 'path' VALUE p_file_path
             )
         );
+
     EXCEPTION
-        WHEN DUP_VAL_ON_INDEX THEN
-            RETURN '{"success": true, "status": "duplicate"}';
+        WHEN NO_DATA_FOUND THEN
+            -- Не нашли: это действительно новая картинка. Вставляем.
+            INSERT INTO USER_IMAGES (IMAGE_ID, USER_ID, MIME_TYPE, FILE_PATH, IMAGE_HASH, UPLOADED_AT)
+            VALUES (USER_IMAGES_SEQ.NEXTVAL, p_user_id, p_mime_type, p_file_path, p_image_hash, SYSDATE)
+            RETURNING IMAGE_ID INTO l_image_id;
+
+            COMMIT;
+            
+            -- === FIX: ВОЗВРАЩАЕМ УСПЕХ №2 (для случая INSERT) ===
+            RETURN JSON_OBJECT(
+                'success'         VALUE true,
+                'status'          VALUE 'uploaded',
+                'old_file_path'   VALUE NULL, -- Это новый файл, старого пути нет
+                'newImage'        VALUE JSON_OBJECT(
+                    'id'   VALUE l_image_id,
+                    'path' VALUE p_file_path
+                )
+            );
+            
+        WHEN OTHERS THEN
+            ROLLBACK;
+            RETURN '{"success": false, "error": "' || SQLERRM || '"}';
+            
+    -- === FIX: Лишний END; убран, теперь здесь правильный END <имя_функции> ===
     END save_user_image;
 
     FUNCTION get_user_images(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB
