@@ -21,7 +21,7 @@ def allowed_file(filename):
 DB_USER = "PUZZLEGAME"
 DB_PASSWORD = "qwertylf1"
 DB_DSN = "localhost:1521/XEPDB1"
-pool = oracledb.create_pool(user=DB_USER, password=DB_PASSWORD, dsn=DB_DSN, min=2, max=10, increment=1)
+pool = oracledb.create_pool(user=DB_USER, password=DB_PASSWORD, dsn=DB_DSN, min=2, max=20, increment=1)
 
 def get_db_connection():
     return pool.acquire()

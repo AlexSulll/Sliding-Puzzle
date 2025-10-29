@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentBoardState: [],
         boardSize: 0,
         isLoading: false,
+        currentReplayId: null,
     };
 
     const DOMElements = {
@@ -137,6 +138,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // === Game Logic Module: Uses the simplified API ===
     const game = {
         start: async (forceNew = false, replayGameId = null) => {
+            if (replayGameId) {
+                state.currentReplayId = replayGameId;
+            }
+
             const size = state.isDaily ? 4 : parseInt(DOMElements.boardSizeSelect.value, 10);
             const settings = {
                 isDailyChallenge: state.isDaily,
@@ -145,7 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 size: size,
                 difficulty: state.isDaily ? 60 : parseInt(DOMElements.difficultySelect.value, 10),
                 forceNew: forceNew,
-                replayGameId: replayGameId
+                replayGameId: state.currentReplayId
             };
             
             const gameState = await api.performAction('start', settings, 'Генерация игры...'); // <-- Добавляем текст
@@ -158,14 +163,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     const randomImageId = Math.floor(Math.random() * 3) + 1;
                     state.imageId = randomImageId;
                     state.gameMode = 'IMAGE';
-                    game.start(true, null);
+                    game.start(true, state.currentReplayId);
                 } else {
                     // 2. Второе предложение: загрузить свою.
                     const choiceUpload = confirm("Хотите загрузить новую картинку?");
                     if (choiceUpload) {
                         // Пользователь согласился
                         state.isUploadingForGameStart = true;
-                        DOMElements.imageUpload.click();
+                        DOMElements.uploadLabel.click();
                     } else {
                         // 3. Третье предложение: сыграть с числами.
                         const choiceNumbers = confirm("Тогда продолжить с числами?");
@@ -173,9 +178,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             // Пользователь согласился
                             state.imageId = null;
                             state.gameMode = 'INTS';
-                            game.start(true, null);
+                            game.start(true, state.currentReplayId);
                         } else {
                             // Пользователь от всего отказался, возвращаем на экран настроек.
+                            state.currentReplayId = null;
                             ui.showScreen('settings');
                         }
                     }
@@ -195,6 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (gameState && gameState.sessionId) {
+                state.currentReplayId = null;
                 ui.showScreen('game');
                 ui.render(gameState);
                 timer.start(gameState.timeRemaining);
@@ -213,8 +220,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const gameState = await api.performAction('redo', {}, 'Возврат хода...'); // <-- Пример
             if (gameState) ui.render(gameState); 
         },
-        abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.showScreen('settings'); },
-        playAgain: () => { timer.stop(); ui.showScreen('settings'); },
+        abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.resetSettingsToDefault(); ui.showScreen('settings'); },
+        playAgain: () => { timer.stop(); ui.resetSettingsToDefault(); ui.showScreen('settings'); },
         hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
         timeout: async () => { await api.performAction('timeout'); timer.stop(); ui.showScreen('settings'); },
         restart: async () => { 
@@ -356,7 +363,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const formData = new FormData();
             formData.append('image', file);
-            DOMElements.customImageName.textContent = 'Загрузка...';
             
             const res = await api.uploadImage(formData);
             
@@ -366,10 +372,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     state.isUploadingForGameStart = false;
                     state.imageId = res.newImage.id;
                     state.gameMode = 'IMAGE';
-                    game.start(true, null);
+                    await ui.loadImages();
+                    game.start(true, state.currentReplayId);
                 } else {
-                    DOMElements.customImageName.textContent = 'Картинка успешно загружена';
-                    ui.loadImages();
+                    await ui.loadImages();
                 }
             } else if (res.status === 'duplicate') {
                 DOMElements.customImageName.textContent = 'Такая картинка уже есть.';
@@ -510,7 +516,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const maxLength = 17;
                 const truncatedUsername = player.user.length > maxLength ? player.user.slice(0, maxLength) + '...' : player.user;
 
-                const place = ['🏆', '🥈', '🥉'][index] || `#${index + 1}`;
+                const place = ['<span class="trophy-icon">🏆</span>',
+                            '<span class="trophy-icon"><i class="fas fa-medal" style="color: silver;"></i></span>',
+                            '<span class="trophy-icon"><i class="fas fa-medal" style="color: #cd7f32;"></i> </span>'][index] || `#${index + 1}`;
 
                 // Вызываем нашу новую функцию-помощник с двумя аргументами
                 const statusHtml = ui.formatPlayerStatus(player.last_seen_raw, currentDbTimeRaw);
@@ -640,6 +648,21 @@ document.addEventListener('DOMContentLoaded', () => {
             container.appendChild(table);
         },
         highlightHint: (tileValue) => { const tile = DOMElements.gameBoard.querySelector(`[data-value="${tileValue}"]`); if (tile) { tile.classList.add('hint'); setTimeout(() => tile.classList.remove('hint'), 1000); } },
+        resetSettingsToDefault: () => {
+            // 1. Сбрасываем внутреннее состояние
+            state.gameMode = 'INTS';
+            state.imageId = null;
+            state.imageUrl = null;
+            
+            // 2. Обновляем UI: выбираем "Числа"
+            document.getElementById('mode-numbers').checked = true;
+            
+            // 3. Скрываем блок выбора картинок
+            DOMElements.imageSelection.classList.add('hidden');
+            
+            // 4. Снимаем выделение со всех картинок
+            document.querySelectorAll('.preview-img.selected').forEach(img => img.classList.remove('selected'));
+        },
     };
     
     // === Timer Module ===
@@ -707,7 +730,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }));
         DOMElements.imageUpload.addEventListener('change', ui.handleImageUpload);
-        DOMElements.startBtn.addEventListener('click', () => game.start(false, null));
+        DOMElements.startBtn.addEventListener('click', () => {
+            if (state.gameMode === 'IMAGE' && !state.imageId) {
+                alert('Пожалуйста, выберите картинку для игры.');
+                return;
+            }
+            game.start(false, null);
+        });
         DOMElements.gameBoard.addEventListener('click', (e) => { const tile = e.target.closest('.tile'); if (tile && tile.dataset.value) game.move(parseInt(tile.dataset.value, 10)); });
         DOMElements.hintBtn.addEventListener('click', game.hint);
         DOMElements.undoBtn.addEventListener('click', game.undo);
@@ -852,7 +881,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (confirm('Вы уверены, что хотите удалить эту картинку?')) {
                     const response = await api.performAction('delete_image', { imageId });
                     if (response && response.success) {
-                        DOMElements.customImageName.textContent = 'Картинка успешно удалена';
                         ui.loadImages();
                     } else {
                         const errorMessage = response && response.message ? response.message : 'Не удалось удалить картинку.';

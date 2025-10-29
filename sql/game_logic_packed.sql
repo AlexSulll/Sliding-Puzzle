@@ -414,10 +414,16 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 l_start_state       := l_original_game.INITIAL_BOARD_STATE;
                 l_size              := l_original_game.BOARD_SIZE;
                 l_shuffles          := l_original_game.SHUFFLE_MOVES;
-                l_game_mode_to_use  := NVL(p_game_mode, l_original_game.GAME_MODE);
-                l_image_id_to_use   := NVL(p_image_id, l_original_game.IMAGE_ID);
                 l_challenge_id      := l_original_game.CHALLENGE_ID;
                 l_optimal_moves     := l_original_game.OPTIMAL_MOVES;
+
+                IF p_image_id IS NOT NULL THEN
+                    l_image_id_to_use := p_image_id;
+                    l_game_mode_to_use := 'IMAGE';
+                ELSE
+                    l_image_id_to_use  := l_original_game.IMAGE_ID;
+                    l_game_mode_to_use := l_original_game.GAME_MODE;
+                END IF;
             END;
         ELSIF p_is_daily_challenge THEN
             DECLARE
@@ -445,6 +451,20 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             END;
         END IF;
 
+        IF l_image_id_to_use IS NOT NULL THEN
+            DECLARE
+                l_image_count NUMBER;
+            BEGIN
+                SELECT COUNT(*) INTO l_image_count 
+                FROM USER_IMAGES 
+                WHERE IMAGE_ID = l_image_id_to_use;
+                
+                IF l_image_count = 0 THEN
+                    l_image_id_to_use := NULL;
+                END IF;
+            END;
+        END IF;
+
         INSERT INTO GAMES (
             GAME_ID, USER_ID, STATUS, BOARD_SIZE, SHUFFLE_MOVES, GAME_MODE, MOVE_COUNT,
             IMAGE_ID, CHALLENGE_ID, START_TIME, COMPLETED_AT, STARS_EARNED,
@@ -460,7 +480,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         VALUES (MOVE_HISTORY_SEQ.NEXTVAL, l_game_id, 0, l_start_state);
 
         COMMIT;
+
         RETURN get_game_state_json(l_game_id, l_optimal_moves);
+        
     END start_new_game;
 
     FUNCTION abandon_game(p_session_id IN GAMES.GAME_ID%TYPE)
@@ -985,6 +1007,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_progress              NUMBER := 0;
         l_expiration_time       DATE;
         l_time_remaining_sec    NUMBER;
+        l_image_missing         NUMBER := 0;
     BEGIN
         SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_game_id;
 
@@ -1028,6 +1051,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 l_image_url := '/api/image/' || l_game.IMAGE_ID;
             END IF;
         ELSE
+            IF l_game.GAME_MODE = 'IMAGE' THEN
+                l_image_missing := 1;
+            END IF;
             l_image_url := NULL;
         END IF;
 
@@ -1054,6 +1080,10 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 'stars'      VALUE l_game.STARS_EARNED,
                 'gameMode'   VALUE l_game.GAME_MODE,
                 'progress'   VALUE l_progress,
+                'imageMissing' VALUE CASE
+                                WHEN l_image_missing = 1 THEN 'true'
+                                ELSE 'false'
+                                END FORMAT JSON,
                 'duration'   VALUE CASE
                                 WHEN l_game.STATUS = 'SOLVED'
                                 THEN GREATEST(ROUND((l_game.COMPLETED_AT - l_game.START_TIME) * 86400), 1)
