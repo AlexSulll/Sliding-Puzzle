@@ -3,7 +3,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const state = {
         currentUser: null,
         timerInterval: null,
-        startTime: null,
         totalSeconds: 0,
         gameMode: 'INTS',
         imageUrl: null,
@@ -12,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
         isDaily: false,
         currentBoardState: [],
         boardSize: 0,
+        isLoading: false,
     };
 
     const DOMElements = {
@@ -20,7 +20,6 @@ document.addEventListener('DOMContentLoaded', () => {
         dailyChallengeScreen: document.getElementById('daily-challenge-screen'),
         dailyLeaderboardContainer: document.getElementById('daily-leaderboard-container'),
         startDailyChallengeBtn: document.getElementById('start-daily-challenge-btn'),
-        backToSettingsBtn: document.getElementById('back-to-settings-btn'),
         gameScreen: document.getElementById('game-screen'),
         leaderboardScreen: document.getElementById('leaderboard-screen'),
         historyScreen: document.getElementById('history-screen'),
@@ -73,12 +72,28 @@ document.addEventListener('DOMContentLoaded', () => {
         userStatsPanel: document.getElementById('user-stats-panel'),
         statsUsername: document.getElementById('stats-username'),
         restartBtn: document.getElementById('restart-btn'),
-        progressCounter: document.getElementById('progress-counter')
+        progressCounter: document.getElementById('progress-counter'),
+        loadingOverlay: document.getElementById('loading-overlay'),
+        loadingText: document.getElementById('loading-text')
     };
 
     // === API Module: Simplified with a single action endpoint ===
     const api = {
-        async call(endpoint, options = {}) {
+        async call(endpoint, options = {}, loadingMessage) {
+            if (state.isLoading) {
+                console.warn("Предыдущий запрос еще выполняется.");
+                return;
+            }
+
+            state.isLoading = true;
+            let loaderTimeout = null;
+
+            if (loadingMessage) {
+                loaderTimeout = setTimeout(() => {
+                    ui.showLoader(loadingMessage);
+                }, 500); // 500ms = 0.5 секунды
+            }
+
             try {
                 const response = await fetch(endpoint, options);
                 if (!response.ok) {
@@ -91,9 +106,13 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (error) {
                 console.error(`API call to ${endpoint} failed:`, error);
                 if (DOMElements.authScreen.classList.contains('active')) { DOMElements.authError.textContent = error.message; } else { alert(`An error occurred: ${error.message}`); }
+            } finally {
+                clearTimeout(loaderTimeout);
+                state.isLoading = false;
+                ui.hideLoader(); // Гарантированно скрываем загрузчик после завершения запроса
             }
         },
-        performAction: (action, params = {}) => api.call('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, params }), }),
+        performAction: (action, params = {}, loadingMessage) => api.call('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, params }), }, loadingMessage),
         register: (username, passwordHash) => api.call('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, passwordHash }) }),
         login: (username, passwordHash) => api.call('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, passwordHash }) }),
         logout: () => api.call('/api/auth/logout', { method: 'POST' }),
@@ -129,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 replayGameId: replayGameId
             };
             
-            const gameState = await api.performAction('start', settings);
+            const gameState = await api.performAction('start', settings, 'Генерация игры...'); // <-- Добавляем текст
 
             if (gameState && gameState.imageMissing) {
                 const choiceStandard = confirm("Картинка для этой игры была удалена. Хотите выбрать стандартную картинку?");
@@ -168,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (confirm('У вас есть незаконченная игра. Хотите продолжить?')) {
                     ui.showScreen('game');
                     ui.render(gameState);
-                    timer.start(gameState.startTime, gameState.boardSize);
+                    timer.start(gameState.timeRemaining);
                 } else {
                     game.start(true, null);
                 }
@@ -178,17 +197,34 @@ document.addEventListener('DOMContentLoaded', () => {
             if (gameState && gameState.sessionId) {
                 ui.showScreen('game');
                 ui.render(gameState);
-                timer.start(gameState.startTime, size);
+                timer.start(gameState.timeRemaining);
             }
         },
-        move: async (tileValue) => { const gameState = await api.performAction('move', { tile: tileValue }); if (gameState) ui.render(gameState); },
-        undo: async () => { const gameState = await api.performAction('undo'); if (gameState) ui.render(gameState); },
-        redo: async () => { const gameState = await api.performAction('redo'); if (gameState) ui.render(gameState); },
+        move: async (tileValue) => { 
+            // Для ходов сообщение можно сделать коротким или не показывать вовсе, если они быстрые
+            const gameState = await api.performAction('move', { tile: tileValue }, 'Обработка хода...'); 
+            if (gameState) ui.render(gameState); 
+        },
+        undo: async () => { 
+            const gameState = await api.performAction('undo', {}, 'Отмена хода...'); // <-- Пример
+            if (gameState) ui.render(gameState); 
+        },
+        redo: async () => { 
+            const gameState = await api.performAction('redo', {}, 'Возврат хода...'); // <-- Пример
+            if (gameState) ui.render(gameState); 
+        },
         abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.showScreen('settings'); },
-        playAgain: () => { timer.stop(); ui.showScreen('settings'); setTimeout(() => { ui.refreshUserData(); }, 500);},
+        playAgain: () => { timer.stop(); ui.showScreen('settings'); },
         hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
         timeout: async () => { await api.performAction('timeout'); timer.stop(); ui.showScreen('settings'); },
-        restart: async () => { const gameState = await api.performAction('restart'); if (gameState) { timer.stop(); ui.render(gameState); timer.start(gameState.startTime, state.boardSize); } },
+        restart: async () => { 
+            const gameState = await api.performAction('restart', {}, 'Перезапуск игры...'); // <-- Пример
+            if (gameState) { 
+                timer.stop(); 
+                ui.render(gameState); 
+                timer.start(gameState.timeRemaining); 
+            } 
+        },
     };
     
     // === UI Module: Handles all DOM manipulation ===
@@ -200,6 +236,43 @@ document.addEventListener('DOMContentLoaded', () => {
             return `${minutes}:${seconds}`;
         },
         
+        formatPlayerStatus: (lastSeenRaw, currentDbTimeRaw) => {
+            // Случай 1: Данных о последнем визите нет (старый пользователь) ИЛИ нет времени от БД
+            if (!lastSeenRaw || !currentDbTimeRaw) {
+                return `<span class="status-indicator offline"></span><span class="last-seen-text">нет данных</span>`;
+            }
+
+            const lastSeenDate = new Date(lastSeenRaw);
+            const now = new Date(currentDbTimeRaw); // <-- Используем ВРЕМЯ ИЗ БД, а не new Date()
+            
+            // Разница в минутах
+            const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / (1000 * 60);
+
+            // Случай 2: Пользователь онлайн (активность менее 5 минут назад)
+            if (diffMinutes < 5) {
+                return `<span class="status-indicator online"></span><span class="last-seen-text">В сети</span>`;
+            } 
+            
+            // Случай 3: Пользователь оффлайн
+            // Форматируем дату в нужный вид: ДД.ММ ЧЧ:ММ
+            const day = String(lastSeenDate.getDate()).padStart(2, '0');
+            const month = String(lastSeenDate.getMonth() + 1).padStart(2, '0'); // Месяцы в JS с 0
+            const hours = String(lastSeenDate.getHours()).padStart(2, '0');
+            const minutes = String(lastSeenDate.getMinutes()).padStart(2, '0');
+            const formattedDate = `${day}.${month} ${hours}:${minutes}`;
+            
+            return `<span class="status-indicator offline"></span><span class="last-seen-text">был(а) ${formattedDate}</span>`;
+        },
+
+        showLoader: (message = 'Загрузка...') => {
+            DOMElements.loadingText.textContent = message;
+            DOMElements.loadingOverlay.classList.remove('hidden');
+        },
+
+        hideLoader: () => {
+            DOMElements.loadingOverlay.classList.add('hidden');
+        },
+
         renderUserStats: async () => {
             return ui.refreshUserData();
         },
@@ -229,17 +302,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             } else {
                 DOMElements.userImagePreviews.innerHTML = '<p class="no-images-msg">Вы еще не загружали картинок.</p>';
-            }
-
-            const imageLimit = 7;
-            if (userImages && userImages.length >= imageLimit) {
-                DOMElements.uploadLabel.classList.add('hidden');
-                DOMElements.customImageName.textContent = `Достигнут лимит в ${imageLimit} картинок.`;
-            } else {
-                DOMElements.uploadLabel.classList.remove('hidden');
-                if (DOMElements.customImageName.textContent.startsWith('Достигнут')) {
-                    DOMElements.customImageName.textContent = '';
-                }
             }
         },
         createPreviewImage: (path, alt, id = null) => {
@@ -281,11 +343,10 @@ document.addEventListener('DOMContentLoaded', () => {
             DOMElements.imageUpload.value = '';
         },
         handleImageUpload: async (event) => {
+            DOMElements.customImageName.textContent = '';
             const file = event.target.files[0];
             if (!file) return;
 
-            const MAX_FILE_SIZE_MB = 5;
-            const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
             const allowedTypes = ['image/jpeg', 'image/png'];
 
             if (!allowedTypes.includes(file.type)) {
@@ -294,15 +355,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            if (file.size > MAX_FILE_SIZE_BYTES) {
-                DOMElements.customImageName.textContent = `Ошибка: Файл слишком большой (макс. ${MAX_FILE_SIZE_MB} МБ).`;
-                event.target.value = '';
-                return;
-            }
-
             const formData = new FormData();
             formData.append('image', file);
-            DOMElements.customImageName.textContent = 'Загрузка...';
             
             const res = await api.uploadImage(formData);
             
@@ -314,7 +368,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     state.gameMode = 'IMAGE';
                     game.start(true, null);
                 } else {
-                    DOMElements.customImageName.textContent = `Загружено: ${file.name}`;
                     ui.loadImages();
                 }
             } else if (res.status === 'duplicate') {
@@ -379,15 +432,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (status === 'SOLVED') {
                 timer.stop();
                 DOMElements.winMoves.textContent = moves;
-                const timeElapsed = Math.floor((new Date() - state.startTime) / 1000);
+                const timeElapsed = gameState.duration;
                 DOMElements.winTime.textContent = ui.formatTime(timeElapsed);
                 DOMElements.winStars.innerHTML = (stars > 0) ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : 'Решено';
                 DOMElements.activeGameView.classList.add('hidden');
                 DOMElements.winOverlay.classList.remove('hidden');
                 
-                ui.renderUserStats().then(() => {
-                    ui.updateLoginState();
-                });
+                ui.updateLoginState();
             } else {
                 if (DOMElements.progressCounter && progress !== undefined) {
                     DOMElements.progressCounter.textContent = `${progress}%`;
@@ -428,6 +479,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await api.performAction('get_leaderboards', { size: size, difficulty: difficulty });
             const container = DOMElements.leaderboardTables;
             container.innerHTML = '';
+            
+            const currentDbTimeRaw = data.current_time_raw; 
 
             if (!data || !data.leaderboard || data.leaderboard.length === 0) {
                 container.innerHTML = '<p><i>Пока нет данных для выбранных фильтров</i></p>';
@@ -456,14 +509,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const maxLength = 17;
                 const truncatedUsername = player.user.length > maxLength ? player.user.slice(0, maxLength) + '...' : player.user;
 
-                const place = ['🏆', '🥈', '🥉'][index] || `#${index + 1}`;
+                const place = ['🏆', '<i class="fas fa-medal" style="color: silver;"></i>', '<i class="fas fa-medal" style="color: #cd7f32;"></i>'][index] || `#${index + 1}`;
 
-                const statusHtml = `
-                    <span class="status-indicator ${player.online_status}"></span>
-                    <span class="last-seen-text">${player.last_seen_text}</span>`;
+                // Вызываем нашу новую функцию-помощник с двумя аргументами
+                const statusHtml = ui.formatPlayerStatus(player.last_seen_raw, currentDbTimeRaw);
 
                 row.innerHTML = `
-                    <td><span class="trophy-place">${place}</span></td>
+                    <td>${place}</td>
                     <td>${truncatedUsername}</td>
                     <td class="player-status">${statusHtml}</td>
                     <td><span class="star-count">${player.total_stars}</span> <i class="fas fa-star gold-star"></i></td>
@@ -516,12 +568,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     statusText = game.stars > 0 ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` : 'Решено';
                 } else if (game.status === 'ABANDONED') {
                     statusText = '<span class="status-abandoned">Сдался</span>';
-                    timeStr = '--:--';
-                    moves='-';
                 } else if (game.status === 'TIMEOUT') {
                     statusText = '<span class="status-timeout">Время вышло</span>';
-                    timeStr = '--:--';
-                    moves='-';
+                    timeStr = '--:--'
                 }
 
                 const row = document.createElement('tr');
@@ -542,8 +591,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await api.performAction('get_daily_leaderboard');
             const container = DOMElements.dailyLeaderboardContainer;
 
+            container.innerHTML = ''; 
+            
+            // Извлекаем время БД из ответа
+            const currentDbTimeRaw = data.current_time_raw;
+
             if (!data || !data.leaderboard || data.leaderboard.length === 0) {
-                container.innerHTML += '<p><i>Сегодня еще никто не прошел челлендж. Будьте первым!</i></p>';
+                container.innerHTML = '<p><i>Сегодня еще никто не прошел челлендж. Будьте первым!</i></p>';
                 return;
             }
 
@@ -566,13 +620,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             data.leaderboard.forEach((player, index) => {
                 const row = document.createElement('tr');
-                const place = ['<span class="trophy-icon">🏆</span>', 
-                            '<span class="trophy-icon">🥈</span>', 
-                            '<span class="trophy-icon">🥉</span>'][index] || `#${index + 1}`;
+                const place = ['<span class="trophy-icon">🏆</span>',
+                            '<span class="trophy-icon"><i class="fas fa-medal" style="color: silver;"></i></span>',
+                            '<span class="trophy-icon"><i class="fas fa-medal" style="color: #cd7f32;"></i> </span>'][index] || `#${index + 1}`;
                 
-                const statusHtml = `
-                    <span class="status-indicator ${player.online_status}"></span>
-                    <span class="last-seen-text">${player.last_seen_text}</span>`;
+                // Вызываем нашу новую функцию-помощник с двумя аргументами
+                const statusHtml = ui.formatPlayerStatus(player.last_seen_raw, currentDbTimeRaw);
 
                 row.innerHTML = `
                     <td>${place}</td>
@@ -589,25 +642,41 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     // === Timer Module ===
+    // === Timer Module ===
     const timer = {
-        start: (startTimeString, boardSize) => {
-            timer.stop(); state.startTime = new Date(startTimeString);
-            const totalMinutes = Math.ceil(10 * (boardSize / 4));
-            state.totalSeconds = totalMinutes * 60;
+        start: (initialTimeRemaining) => {
+            timer.stop();
+            
+            state.totalSeconds = initialTimeRemaining; 
+
+            // Если время уже 0, не запускаем таймер
+            if (state.totalSeconds <= 0) {
+                DOMElements.timerDisplay.textContent = '00:00';
+                return;
+            }
+
+            DOMElements.timerDisplay.textContent = ui.formatTime(state.totalSeconds);
+
             state.timerInterval = setInterval(() => {
-                const timeElapsed = Math.floor((new Date() - state.startTime) / 1000);
-                const timeRemaining = state.totalSeconds - timeElapsed;
-                if (timeRemaining <= 0) {
+
+                state.totalSeconds--; 
+
+                if (state.totalSeconds <= 0) {
                     DOMElements.timerDisplay.textContent = '00:00';
                     timer.stop();
                     alert('Время вышло!');
                     game.timeout();
                     return;
                 }
-                DOMElements.timerDisplay.textContent = ui.formatTime(timeRemaining);
+                
+                DOMElements.timerDisplay.textContent = ui.formatTime(state.totalSeconds);
             }, 1000);
         },
-        stop: () => { if (state.timerInterval) clearInterval(state.timerInterval); state.timerInterval = null; }
+        stop: () => { 
+            if (state.timerInterval) clearInterval(state.timerInterval); 
+            state.timerInterval = null; 
+            state.totalSeconds = 0;
+        }
     };
 
     // === Initializer: Assigns all event listeners ===
@@ -631,8 +700,19 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.modeRadios.forEach(radio => radio.addEventListener('change', (e) => {
             state.gameMode = e.target.value;
             DOMElements.imageSelection.classList.toggle('hidden', state.gameMode !== 'IMAGE');
-            if (state.gameMode === 'INTS') {
+            if (state.gameMode === 'IMAGE') {
+                const firstDefaultImage = DOMElements.defaultImagePreviews.querySelector('.preview-img');
+                if (firstDefaultImage) {
+                    document.querySelectorAll('.preview-img').forEach(img => img.classList.remove('selected'));
+                    firstDefaultImage.classList.add('selected');
+                    state.imageUrl = firstDefaultImage.dataset.src;
+                    state.imageId = firstDefaultImage.dataset.imageId;
+                    DOMElements.customImageName.textContent = '';
+                    DOMElements.imageUpload.value = '';
+                }
+            } else if (state.gameMode === 'INTS') {
                 state.imageUrl = null;
+                state.imageId = null;
                 document.querySelectorAll('.preview-img.selected').forEach(img => img.classList.remove('selected'));
             }
         }));
@@ -776,13 +856,16 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.userImagePreviews.addEventListener('click', async (event) => {
             const deleteButton = event.target.closest('.delete-btn');
             if (deleteButton) {
+                DOMElements.customImageName.textContent = '';
+
                 const imageId = deleteButton.dataset.imageId;
                 if (confirm('Вы уверены, что хотите удалить эту картинку?')) {
                     const response = await api.performAction('delete_image', { imageId });
                     if (response && response.success) {
                         ui.loadImages();
                     } else {
-                        alert('Не удалось удалить картинку.');
+                        const errorMessage = response && response.message ? response.message : 'Не удалось удалить картинку.';
+                        DOMElements.customImageName.textContent = errorMessage;
                     }
                 }
             }
@@ -793,12 +876,6 @@ document.addEventListener('DOMContentLoaded', () => {
             game.start(false, null);
         });
 
-        DOMElements.backToSettingsBtn.addEventListener('click', () => {
-            DOMElements.dailyCheck.checked = false;
-            state.isDaily = false;
-            DOMElements.regularSettings.classList.remove('hidden');
-            ui.showScreen('settings');
-        });
         auth.checkStatus();
     }
     init();
