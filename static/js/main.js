@@ -487,13 +487,13 @@ document.addEventListener('DOMContentLoaded', () => {
         renderLeaderboards: async () => {
             const size = DOMElements.filterSize.value;
             const difficulty = DOMElements.filterDifficulty.value;
-            const data = await api.performAction('get_leaderboards', { size: size, difficulty: difficulty });
+            const data = await api.performAction('get_leaderboards', { size, difficulty });
             const container = DOMElements.leaderboardTables;
             container.innerHTML = '';
             
             const currentDbTimeRaw = data.current_time_raw; 
 
-            if (!data || !data.leaderboard || data.leaderboard.length === 0) {
+            if (!data?.leaderboard) {
                 container.innerHTML = '<p><i>Пока нет данных для выбранных фильтров</i></p>';
                 return;
             }
@@ -515,30 +515,86 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             const tbody = table.querySelector('tbody');
 
-            data.leaderboard.forEach((player, index) => {
+            const currentUser = state.currentUser;
+            const currentUserData = currentUser ? 
+                data.leaderboard.find((player, index) => {
+                    if (player.user.toLowerCase() === currentUser.name.toLowerCase()) {
+                        player.position = index;
+                        return true;
+                    }
+                    return false;
+                }) : null;
+
+            const shouldShowFull = !currentUserData || currentUserData.position < 5;
+            
+            if (shouldShowFull) {
+                renderFullLeaderboard();
+            } else {
+                renderCompactLeaderboard();
+            }
+
+            container.appendChild(table);
+
+            function renderFullLeaderboard() {
+                tbody.innerHTML = '';
+                data.leaderboard.forEach((player, index) => {
+                    tbody.appendChild(createPlayerRow(player, index));
+                });
+            }
+
+            function renderCompactLeaderboard() {
+                tbody.innerHTML = ''; 
+                
+                data.leaderboard.slice(0, 3).forEach((player, index) => {
+                    tbody.appendChild(createPlayerRow(player, index));
+                });
+
+                const separatorRow = document.createElement('tr');
+                separatorRow.className = 'separator-row clickable-separator';
+                separatorRow.innerHTML = `<td colspan="6"><div class="table-separator">... показать всех ...</div></td>`;
+                separatorRow.addEventListener('click', renderFullLeaderboard);
+                tbody.appendChild(separatorRow);
+
+                const userPosition = currentUserData.position;
+                data.leaderboard.slice(userPosition).forEach((player, index) => {
+                    const position = userPosition + index;
+                    const row = createPlayerRow(player, position);
+                    if (position === userPosition) row.classList.add('current-user-row');
+                    tbody.appendChild(row);
+                });
+            }
+
+            function createPlayerRow(player, position) {
                 const row = document.createElement('tr');
                 const maxLength = 17;
-                const truncatedUsername = player.user.length > maxLength ? player.user.slice(0, maxLength) + '...' : player.user;
+                const truncatedUsername = player.user.length > maxLength ? 
+                    player.user.slice(0, maxLength) + '...' : player.user;
 
-                const place = ['<span class="trophy-icon">🏆</span>',
-                            '<span class="trophy-icon"><i class="fas fa-medal" style="color: silver;"></i></span>',
-                            '<span class="trophy-icon"><i class="fas fa-medal" style="color: #cd7f32;"></i> </span>'][index] || `#${index + 1}`;
-
-                // Вызываем нашу новую функцию-помощник с двумя аргументами
+                const place = getPlaceIcon(position);
                 const statusHtml = ui.formatPlayerStatus(player.last_seen_raw, currentDbTimeRaw);
+                const isCurrentUser = currentUserData?.position === position;
 
                 row.innerHTML = `
                     <td>${place}</td>
-                    <td>${truncatedUsername}</td>
+                    <td>${truncatedUsername}${isCurrentUser ? ' <span class="you-badge">(Вы)</span>' : ''}</td>
                     <td class="player-status">${statusHtml}</td>
                     <td><span class="star-count">${player.total_stars}</span> <i class="fas fa-star gold-star"></i></td>
                     <td>${player.solved_games}</td>
                     <td>${player.unfinished_games}</td>
                 `;
-                tbody.appendChild(row);
-            });
+                
+                if (isCurrentUser) row.classList.add('current-user-row');
+                return row;
+            }
 
-            container.appendChild(table);
+            function getPlaceIcon(position) {
+                if (position < 3) {
+                    return ['<span class="trophy-icon">🏆</span>',
+                        '<span class="trophy-icon"><i class="fas fa-medal" style="color: silver;"></i></span>',
+                        '<span class="trophy-icon"><i class="fas fa-medal" style="color: #cd7f32;"></i></span>'][position];
+                }
+                return `#${position + 1}`;
+            }
         },
 
         refreshUserData: async () => {
