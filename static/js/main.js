@@ -54,7 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
         movesCounter: document.getElementById('moves-counter'),
         timerDisplay: document.getElementById('timer'),
         activeGameView: document.getElementById('active-game-view'),
-        gameControls: document.getElementById('game-controls'),
         hintBtn: document.getElementById('hint-btn'),
         undoBtn: document.getElementById('undo-btn'),
         redoBtn: document.getElementById('redo-btn'),
@@ -68,10 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
         filterSize: document.getElementById('filter-size'),
         filterDifficulty: document.getElementById('filter-difficulty'),
         applyFiltersBtn: document.getElementById('apply-filters-btn'),
-        historyScreen: document.getElementById('history-screen'),
         historyTableContainer: document.getElementById('history-table-container'),
-        userStatsPanel: document.getElementById('user-stats-panel'),
-        statsUsername: document.getElementById('stats-username'),
         restartBtn: document.getElementById('restart-btn'),
         progressCounter: document.getElementById('progress-counter'),
         loadingOverlay: document.getElementById('loading-overlay'),
@@ -133,12 +129,12 @@ document.addEventListener('DOMContentLoaded', () => {
         clearForms: () => { document.querySelectorAll('#auth-screen form').forEach(form => form.reset()); auth.hideError(); },
         handleLogin: async (event) => { event.preventDefault(); auth.hideError(); const username = document.getElementById('login-username').value.trim(); const password = document.getElementById('login-password').value; if (!username || !password) { auth.showError('Пожалуйста, заполните все поля'); return; } const loginBtn = document.getElementById('login-btn'); const originalText = loginBtn.innerHTML; loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Вход...'; loginBtn.disabled = true; try { const response = await api.login(username, auth.hashPassword(password)); if (response && response.success) { auth.onLoginSuccess(response.user); } else { auth.showError(response?.message || 'Неверное имя пользователя или пароль'); } } catch (error) { auth.showError('Ошибка соединения. Попробуйте позже.'); } finally { loginBtn.innerHTML = originalText; loginBtn.disabled = false; } },
         handleRegister: async (event) => { event.preventDefault(); auth.hideError(); const username = document.getElementById('register-username').value.trim(); const password = document.getElementById('register-password').value; const usernameValidation = auth.validateUsername(username); if (!usernameValidation.isValid) { auth.showError(usernameValidation.message); return; } if (!password) { auth.showError('Пожалуйста, введите пароль'); return; } if (password.length < 8) { auth.showError('Пароль должен содержать минимум 8 символов'); return; } const registerBtn = document.getElementById('register-btn'); const originalText = registerBtn.innerHTML; registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Регистрация...'; registerBtn.disabled = true; try { const response = await api.register(username, auth.hashPassword(password)); if (response && response.success) { auth.onLoginSuccess(response.user); } else { auth.showError(response?.message || 'Ошибка регистрации. Возможно, имя пользователя уже занято.'); } } catch (error) { auth.showError('Ошибка соединения. Попробуйте позже.'); } finally { registerBtn.innerHTML = originalText; registerBtn.disabled = false; } },
-        handleLogout: async () => { await api.logout(); state.currentUser = null; ui.updateLoginState(); if (DOMElements.userStatsPanel) DOMElements.userStatsPanel.classList.add('hidden'); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); auth.clearForms(); auth.hideError(); },
+        handleLogout: async () => { await api.logout(); state.currentUser = null; ui.updateLoginState(); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); auth.clearForms(); auth.hideError(); },
         onLoginSuccess: async (userData, activeGameId = null) => {
             state.currentUser = userData;
             state.activeGameSessionId = activeGameId;
             ui.loadImages();
-            await ui.renderUserStats();
+            await ui.refreshUserData();
             await ui.updateLoginState();
             
             if (state.activeGameSessionId) {
@@ -306,7 +302,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const ui = {
         formatTime: (totalSeconds) => {
-            if (!totalSeconds || totalSeconds === 0) return '--:--';
             const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
             const seconds = String(totalSeconds % 60).padStart(2, '0');
             return `${minutes}:${seconds}`;
@@ -342,10 +337,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         hideLoader: () => {
             DOMElements.loadingOverlay.classList.add('hidden');
-        },
-
-        renderUserStats: async () => {
-            return ui.refreshUserData();
         },
 
         loadImages: async () => {
@@ -973,29 +964,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         });
-
-        const dailyLabel = document.querySelector('.daily-label');
-        const dailyTextPrimary = document.querySelector('.daily-text-primary');
-        const dailyTextSecondary = document.querySelector('.daily-text-secondary');
-        const dailyIcon = document.querySelector('.daily-label i');
-
-        if (dailyLabel) {
-            dailyLabel.addEventListener('mouseenter', () => {
-                dailyTextPrimary.style.transition = 'transform 0.3s ease';
-                dailyTextSecondary.style.transition = 'transform 0.3s ease';
-                if (dailyIcon) {
-                    dailyIcon.style.transition = 'transform 0.3s ease, color 0.3s ease';
-                }
-            });
-
-            dailyLabel.addEventListener('mouseleave', () => {
-                dailyTextPrimary.style.transition = 'transform 0.3s ease';
-                dailyTextSecondary.style.transition = 'transform 0.3s ease';
-                if (dailyIcon) {
-                    dailyIcon.style.transition = 'transform 0.3s ease, color 0.3s ease';
-                }
-            });
-        }
 
         document.querySelectorAll('.size-btn').forEach(btn => {
             btn.addEventListener('click', function() {
