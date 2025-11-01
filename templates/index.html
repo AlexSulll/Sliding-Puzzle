@@ -190,7 +190,7 @@
                     <div class="custom-select-wrapper">
                         <label for="filter-size" class="sr-only">Фильтр по размеру</label>
                         <select id="filter-size">
-                            <option value="0">Все размеры</option>
+                            <option value="0">Размеры</option>
                             <option value="3">3x3</option>
                             <option value="4">4x4</option>
                             <option value="5">5x5</option>
@@ -200,7 +200,7 @@
                     <div class="custom-select-wrapper">
                         <label for="filter-difficulty" class="sr-only">Фильтр по сложности</label>
                         <select id="filter-difficulty">
-                            <option value="0">Все сложности</option>
+                            <option value="0">Сложность</option>
                             <option value="30">Легко</option>
                             <option value="60">Нормально</option>
                             <option value="80">Сложно</option>
@@ -213,6 +213,34 @@
 
             <section id="history-screen" class="screen">
                 <h2>История игр</h2>
+                <div class="leaderboard-filters">
+                    <div class="custom-select-wrapper">
+                        <label for="history-filter-size" class="sr-only">Фильтр по размеру</label>
+                        <select id="history-filter-size">
+                            <option value="0">Размеры</option>
+                            <option value="3">3x3</option>
+                            <option value="4">4x4</option>
+                            <option value="5">5x5</option>
+                            <option value="6">6x6</option>
+                        </select>
+                    </div>
+                    <div class="custom-select-wrapper">
+                        <label for="history-filter-difficulty" class="sr-only">Фильтр по сложности</label>
+                        <select id="history-filter-difficulty">
+                            <option value="0">Сложность</option>
+                            <option value="30">Легко</option>
+                            <option value="60">Нормально</option>
+                            <option value="80">Сложно</option>
+                        </select>
+                    </div>
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="history-filter-unfinished" class="custom-checkbox">
+                        <label for="history-filter-unfinished" class="checkbox-label">
+                            <span class="checkmark"></span>
+                        </label>
+                    </div>
+                    <button id="apply-history-filters-btn" class="btn btn-primary"><i class="fas fa-filter"></i> Применить</button>
+                </div>
                 <div id="history-table-container" class="scrollable-table"></div>
             </section>
         

@@ -1,5 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // === Global Application State & DOM Elements ===
     const state = {
         currentUser: null,
         timerInterval: null,
@@ -75,10 +74,13 @@ document.addEventListener('DOMContentLoaded', () => {
         restartBtn: document.getElementById('restart-btn'),
         progressCounter: document.getElementById('progress-counter'),
         loadingOverlay: document.getElementById('loading-overlay'),
-        loadingText: document.getElementById('loading-text')
+        loadingText: document.getElementById('loading-text'),
+        historyFilterSize: document.getElementById('history-filter-size'),
+        historyFilterDifficulty: document.getElementById('history-filter-difficulty'),
+        historyFilterUnfinished: document.getElementById('history-filter-unfinished'),
+        applyHistoryFiltersBtn: document.getElementById('apply-history-filters-btn'),
     };
 
-    // === API Module: Simplified with a single action endpoint ===
     const api = {
         async call(endpoint, options = {}, loadingMessage) {
             if (state.isLoading) {
@@ -92,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (loadingMessage) {
                 loaderTimeout = setTimeout(() => {
                     ui.showLoader(loadingMessage);
-                }, 500); // 500ms = 0.5 секунды
+                }, 500);
             }
 
             try {
@@ -110,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } finally {
                 clearTimeout(loaderTimeout);
                 state.isLoading = false;
-                ui.hideLoader(); // Гарантированно скрываем загрузчик после завершения запроса
+                ui.hideLoader();
             }
         },
         performAction: (action, params = {}, loadingMessage) => api.call('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, params }), }, loadingMessage),
@@ -121,7 +123,6 @@ document.addEventListener('DOMContentLoaded', () => {
         uploadImage: (formData) => api.call('/api/upload-image', { method: 'POST', body: formData }),
     };
 
-    // === Auth Module: Handles login, registration, etc. ===
     const auth = {
         hashPassword: (password) => CryptoJS.SHA256(password).toString(CryptoJS.enc.Hex).toUpperCase(),
         validateUsername: (username) => { if (username.length === 0) { return { isValid: false, message: 'Имя пользователя не может быть пустым' }; } if (username.length > 50 || username.length < 3) { return { isValid: false, message: 'Имя пользователя должно содержать от 3 до 50 символов' }; } const validUsernameRegex = /^[a-zA-Z0-9_-]+$/; if (!validUsernameRegex.test(username)) { return {  isValid: false, message: 'Имя пользователя может содержать только латинские буквы, цифры, знаки "-" и "_"'  }; } return { isValid: true, message: '' }; },
@@ -135,7 +136,6 @@ document.addEventListener('DOMContentLoaded', () => {
         checkStatus: async () => { const response = await api.getStatus(); if (response && response.isLoggedIn) { auth.onLoginSuccess(response.user); } else { ui.showScreen('auth'); } }
     };
 
-    // === Game Logic Module: Uses the simplified API ===
     const game = {
         start: async (forceNew = false, replayGameId = null) => {
             if (replayGameId) {
@@ -153,34 +153,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 replayGameId: state.currentReplayId
             };
             
-            const gameState = await api.performAction('start', settings, 'Генерация игры...'); // <-- Добавляем текст
+            const gameState = await api.performAction('start', settings, 'Генерация игры...');
 
             if (gameState && gameState.imageMissing) {
                 const choiceStandard = confirm("Картинка для этой игры была удалена. Хотите выбрать стандартную картинку?");
 
                 if (choiceStandard) {
-                    // Пользователь согласился
                     const randomImageId = Math.floor(Math.random() * 3) + 1;
                     state.imageId = randomImageId;
                     state.gameMode = 'IMAGE';
                     game.start(true, state.currentReplayId);
                 } else {
-                    // 2. Второе предложение: загрузить свою.
                     const choiceUpload = confirm("Хотите загрузить новую картинку?");
                     if (choiceUpload) {
-                        // Пользователь согласился
                         state.isUploadingForGameStart = true;
                         DOMElements.uploadLabel.click();
                     } else {
-                        // 3. Третье предложение: сыграть с числами.
                         const choiceNumbers = confirm("Тогда продолжить с числами?");
                         if (choiceNumbers) {
-                            // Пользователь согласился
                             state.imageId = null;
                             state.gameMode = 'INTS';
                             game.start(true, state.currentReplayId);
                         } else {
-                            // Пользователь от всего отказался, возвращаем на экран настроек.
                             state.currentReplayId = null;
                             ui.showScreen('settings');
                         }
@@ -208,16 +202,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         },
         move: async (tileValue) => { 
-            // Для ходов сообщение можно сделать коротким или не показывать вовсе, если они быстрые
             const gameState = await api.performAction('move', { tile: tileValue }, 'Обработка хода...'); 
             if (gameState) ui.render(gameState); 
         },
         undo: async () => { 
-            const gameState = await api.performAction('undo', {}, 'Отмена хода...'); // <-- Пример
+            const gameState = await api.performAction('undo', {}, 'Отмена хода...');
             if (gameState) ui.render(gameState); 
         },
         redo: async () => { 
-            const gameState = await api.performAction('redo', {}, 'Возврат хода...'); // <-- Пример
+            const gameState = await api.performAction('redo', {}, 'Возврат хода...');
             if (gameState) ui.render(gameState); 
         },
         abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.resetSettingsToDefault(); ui.showScreen('settings'); },
@@ -225,7 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
         hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
         timeout: async () => { await api.performAction('timeout'); timer.stop(); ui.showScreen('settings'); },
         restart: async () => { 
-            const gameState = await api.performAction('restart', {}, 'Перезапуск игры...'); // <-- Пример
+            const gameState = await api.performAction('restart', {}, 'Перезапуск игры...');
             if (gameState) { 
                 timer.stop(); 
                 ui.render(gameState); 
@@ -234,7 +227,6 @@ document.addEventListener('DOMContentLoaded', () => {
         },
     };
     
-    // === UI Module: Handles all DOM manipulation ===
     const ui = {
         formatTime: (totalSeconds) => {
             if (!totalSeconds || totalSeconds === 0) return '--:--';
@@ -244,26 +236,21 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         
         formatPlayerStatus: (lastSeenRaw, currentDbTimeRaw) => {
-            // Случай 1: Данных о последнем визите нет (старый пользователь) ИЛИ нет времени от БД
             if (!lastSeenRaw || !currentDbTimeRaw) {
                 return `<span class="status-indicator offline"></span><span class="last-seen-text">нет данных</span>`;
             }
 
             const lastSeenDate = new Date(lastSeenRaw);
-            const now = new Date(currentDbTimeRaw); // <-- Используем ВРЕМЯ ИЗ БД, а не new Date()
-            
-            // Разница в минутах
+            const now = new Date(currentDbTimeRaw);
+
             const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / (1000 * 60);
 
-            // Случай 2: Пользователь онлайн (активность менее 5 минут назад)
             if (diffMinutes < 5) {
                 return `<span class="status-indicator online"></span><span class="last-seen-text">В сети</span>`;
             } 
             
-            // Случай 3: Пользователь оффлайн
-            // Форматируем дату в нужный вид: ДД.ММ ЧЧ:ММ
             const day = String(lastSeenDate.getDate()).padStart(2, '0');
-            const month = String(lastSeenDate.getMonth() + 1).padStart(2, '0'); // Месяцы в JS с 0
+            const month = String(lastSeenDate.getMonth() + 1).padStart(2, '0');
             const hours = String(lastSeenDate.getHours()).padStart(2, '0');
             const minutes = String(lastSeenDate.getMinutes()).padStart(2, '0');
             const formattedDate = `${day}.${month} ${hours}:${minutes}`;
@@ -407,7 +394,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 ui.renderGameHistory(); 
             }
             if (screenName === 'settings') { 
-                // Сбрасываем состояние ежедневного челленджа при возврате на экран настроек
                 DOMElements.dailyCheck.checked = false;
                 state.isDaily = false;
                 DOMElements.regularSettings.classList.remove('hidden');
@@ -483,13 +469,13 @@ document.addEventListener('DOMContentLoaded', () => {
         renderLeaderboards: async () => {
             const size = DOMElements.filterSize.value;
             const difficulty = DOMElements.filterDifficulty.value;
-            const data = await api.performAction('get_leaderboards', { size: size, difficulty: difficulty });
+            const data = await api.performAction('get_leaderboards', { size, difficulty });
             const container = DOMElements.leaderboardTables;
             container.innerHTML = '';
             
             const currentDbTimeRaw = data.current_time_raw; 
 
-            if (!data || !data.leaderboard || data.leaderboard.length === 0) {
+            if (!data?.leaderboard) {
                 container.innerHTML = '<p><i>Пока нет данных для выбранных фильтров</i></p>';
                 return;
             }
@@ -511,30 +497,86 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             const tbody = table.querySelector('tbody');
 
-            data.leaderboard.forEach((player, index) => {
+            const currentUser = state.currentUser;
+            const currentUserData = currentUser ? 
+                data.leaderboard.find((player, index) => {
+                    if (player.user.toLowerCase() === currentUser.name.toLowerCase()) {
+                        player.position = index;
+                        return true;
+                    }
+                    return false;
+                }) : null;
+
+            const shouldShowFull = !currentUserData || currentUserData.position < 5;
+            
+            if (shouldShowFull) {
+                renderFullLeaderboard();
+            } else {
+                renderCompactLeaderboard();
+            }
+
+            container.appendChild(table);
+
+            function renderFullLeaderboard() {
+                tbody.innerHTML = '';
+                data.leaderboard.forEach((player, index) => {
+                    tbody.appendChild(createPlayerRow(player, index));
+                });
+            }
+
+            function renderCompactLeaderboard() {
+                tbody.innerHTML = ''; 
+                
+                data.leaderboard.slice(0, 3).forEach((player, index) => {
+                    tbody.appendChild(createPlayerRow(player, index));
+                });
+
+                const separatorRow = document.createElement('tr');
+                separatorRow.className = 'separator-row clickable-separator';
+                separatorRow.innerHTML = `<td colspan="6"><div class="table-separator">... показать всех ...</div></td>`;
+                separatorRow.addEventListener('click', renderFullLeaderboard);
+                tbody.appendChild(separatorRow);
+
+                const userPosition = currentUserData.position;
+                data.leaderboard.slice(userPosition).forEach((player, index) => {
+                    const position = userPosition + index;
+                    const row = createPlayerRow(player, position);
+                    if (position === userPosition) row.classList.add('current-user-row');
+                    tbody.appendChild(row);
+                });
+            }
+
+            function createPlayerRow(player, position) {
                 const row = document.createElement('tr');
                 const maxLength = 17;
-                const truncatedUsername = player.user.length > maxLength ? player.user.slice(0, maxLength) + '...' : player.user;
+                const truncatedUsername = player.user.length > maxLength ? 
+                    player.user.slice(0, maxLength) + '...' : player.user;
 
-                const place = ['<span class="trophy-icon">🏆</span>',
-                            '<span class="trophy-icon"><i class="fas fa-medal" style="color: silver;"></i></span>',
-                            '<span class="trophy-icon"><i class="fas fa-medal" style="color: #cd7f32;"></i> </span>'][index] || `#${index + 1}`;
-
-                // Вызываем нашу новую функцию-помощник с двумя аргументами
+                const place = getPlaceIcon(position);
                 const statusHtml = ui.formatPlayerStatus(player.last_seen_raw, currentDbTimeRaw);
+                const isCurrentUser = currentUserData?.position === position;
 
                 row.innerHTML = `
                     <td>${place}</td>
-                    <td>${truncatedUsername}</td>
+                    <td>${truncatedUsername}${isCurrentUser ? ' <span class="you-badge">(Вы)</span>' : ''}</td>
                     <td class="player-status">${statusHtml}</td>
                     <td><span class="star-count">${player.total_stars}</span> <i class="fas fa-star gold-star"></i></td>
                     <td>${player.solved_games}</td>
                     <td>${player.unfinished_games}</td>
                 `;
-                tbody.appendChild(row);
-            });
+                
+                if (isCurrentUser) row.classList.add('current-user-row');
+                return row;
+            }
 
-            container.appendChild(table);
+            function getPlaceIcon(position) {
+                if (position < 3) {
+                    return ['<span class="trophy-icon">🏆</span>',
+                        '<span class="trophy-icon"><i class="fas fa-medal" style="color: silver;"></i></span>',
+                        '<span class="trophy-icon"><i class="fas fa-medal" style="color: #cd7f32;"></i></span>'][position];
+                }
+                return `#${position + 1}`;
+            }
         },
 
         refreshUserData: async () => {
@@ -554,12 +596,21 @@ document.addEventListener('DOMContentLoaded', () => {
         },
 
         renderGameHistory: async () => {
-            const historyData = await api.performAction('get_game_history');
+            const size = DOMElements.historyFilterSize.value;
+            const difficulty = parseInt(DOMElements.historyFilterDifficulty.value, 10);
+            const unfinished = DOMElements.historyFilterUnfinished.checked ? 'abandoned' : '0';
+            
+            const historyData = await api.performAction('get_game_history', {
+                size: size,
+                difficulty: difficulty,
+                result: unfinished
+            });
+            
             const container = DOMElements.historyTableContainer;
             container.innerHTML = ''; 
 
             if (!historyData || historyData.length === 0) {
-                container.innerHTML = '<p><i>Вы еще не сыграли ни одной игры</i></p>';
+                container.innerHTML = '<p><i>Нет игр, соответствующих выбранным фильтрам</i></p>';
                 return;
             }
 
@@ -572,6 +623,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let timeStr = ui.formatTime(game.time);
                 let statusText = '';
                 let moves = game.moves;
+                const shouldPulse = game.stars > 0 && game.stars < 3;
 
                 if (game.status === 'SOLVED') {
                     statusText = game.stars > 0 ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` : 'Решено';
@@ -589,12 +641,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     <td>${moves}</td>
                     <td>${timeStr}</td>
                     <td>${statusText}</td>
-                    <td><button class="replay-btn" data-game-id="${game.gameId}"><i class="fas fa-play"></i> Переиграть</button></td>
+                    <td><button class="replay-btn ${shouldPulse ? 'pulsing' : ''}" data-game-id="${game.gameId}"><i class="fas fa-play"></i> Переиграть</button></td>
                 `;
                 tbody.appendChild(row);
             });
             container.appendChild(table);
         },
+
         
         renderDailyLeaderboard: async () => {
             const data = await api.performAction('get_daily_leaderboard');
@@ -602,7 +655,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             container.innerHTML = ''; 
             
-            // Извлекаем время БД из ответа
             const currentDbTimeRaw = data.current_time_raw;
 
             if (!data || !data.leaderboard || data.leaderboard.length === 0) {
@@ -629,11 +681,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             data.leaderboard.forEach((player, index) => {
                 const row = document.createElement('tr');
-                const place = ['<span class="trophy-icon">🏆</span>', 
-                            '<span class="trophy-icon">🥈</span>', 
-                            '<span class="trophy-icon">🥉</span>'][index] || `#${index + 1}`;
+                const place = ['🏆', '<i class="fas fa-medal" style="color: silver;"></i>', '<i class="fas fa-medal" style="color: #cd7f32;"></i>'][index] || `#${index + 1}`;
                 
-                // Вызываем нашу новую функцию-помощник с двумя аргументами
                 const statusHtml = ui.formatPlayerStatus(player.last_seen_raw, currentDbTimeRaw);
 
                 row.innerHTML = `
@@ -649,31 +698,21 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         highlightHint: (tileValue) => { const tile = DOMElements.gameBoard.querySelector(`[data-value="${tileValue}"]`); if (tile) { tile.classList.add('hint'); setTimeout(() => tile.classList.remove('hint'), 1000); } },
         resetSettingsToDefault: () => {
-            // 1. Сбрасываем внутреннее состояние
             state.gameMode = 'INTS';
             state.imageId = null;
             state.imageUrl = null;
-            
-            // 2. Обновляем UI: выбираем "Числа"
             document.getElementById('mode-numbers').checked = true;
-            
-            // 3. Скрываем блок выбора картинок
             DOMElements.imageSelection.classList.add('hidden');
-            
-            // 4. Снимаем выделение со всех картинок
             document.querySelectorAll('.preview-img.selected').forEach(img => img.classList.remove('selected'));
         },
     };
-    
-    // === Timer Module ===
-    // === Timer Module ===
+
     const timer = {
         start: (initialTimeRemaining) => {
             timer.stop();
             
             state.totalSeconds = initialTimeRemaining; 
 
-            // Если время уже 0, не запускаем таймер
             if (state.totalSeconds <= 0) {
                 DOMElements.timerDisplay.textContent = '00:00';
                 return;
@@ -703,7 +742,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // === Initializer: Assigns all event listeners ===
     function init() {
         DOMElements.loginForm.addEventListener('submit', auth.handleLogin);
         DOMElements.registerForm.addEventListener('submit', auth.handleRegister);
@@ -711,7 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.showRegisterLink.addEventListener('click', (e) => { e.preventDefault(); DOMElements.loginView.classList.add('hidden'); DOMElements.registerView.classList.remove('hidden'); DOMElements.authError.textContent = ''; });
         DOMElements.showLoginLink.addEventListener('click', (e) => { e.preventDefault(); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); DOMElements.authError.textContent = ''; });
         DOMElements.navButtons.forEach(btn => btn.addEventListener('click', () => ui.showScreen(btn.dataset.screen)));
-        
+        DOMElements.applyHistoryFiltersBtn.addEventListener('click', ui.renderGameHistory);
         DOMElements.dailyCheck.addEventListener('change', (e) => {
             if (e.target.checked) {
                 ui.showScreen('daily-challenge');
@@ -757,7 +795,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.addEventListener('keydown', (e) => {
             if (!DOMElements.gameScreen.classList.contains('active')) return;
             
-            const code = e.code; // Используем e.code для независимости от раскладки
+            const code = e.code;
             const isShift = e.shiftKey;
 
             switch (code) {
@@ -789,13 +827,13 @@ document.addEventListener('DOMContentLoaded', () => {
             let targetIndex = -1;
             const size = state.boardSize;
 
-            if (e.key === 'ArrowUp' && emptyIndex < size * (size - 1)) { // Двигаем плитку снизу вверх (на пустое место)
+            if (e.key === 'ArrowUp' && emptyIndex < size * (size - 1)) {
                 targetIndex = emptyIndex + size;
-            } else if (e.key === 'ArrowDown' && emptyIndex >= size) { // Двигаем плитку сверху вниз
+            } else if (e.key === 'ArrowDown' && emptyIndex >= size) {
                 targetIndex = emptyIndex - size;
-            } else if (e.key === 'ArrowLeft' && (emptyIndex % size) < (size - 1)) { // Двигаем плитку справа налево
+            } else if (e.key === 'ArrowLeft' && (emptyIndex % size) < (size - 1)) {
                 targetIndex = emptyIndex + 1;
-            } else if (e.key === 'ArrowRight' && (emptyIndex % size) > 0) { // Двигаем плитку слева направо
+            } else if (e.key === 'ArrowRight' && (emptyIndex % size) > 0) {
                 targetIndex = emptyIndex - 1;
             }
 
@@ -808,16 +846,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        
-
-    // Добавляем обработчики для плавной анимации при наведении
         const dailyLabel = document.querySelector('.daily-label');
         const dailyTextPrimary = document.querySelector('.daily-text-primary');
         const dailyTextSecondary = document.querySelector('.daily-text-secondary');
         const dailyIcon = document.querySelector('.daily-label i');
 
         if (dailyLabel) {
-        // Для плавного перехода при быстром наведении/снятии
             dailyLabel.addEventListener('mouseenter', () => {
                 dailyTextPrimary.style.transition = 'transform 0.3s ease';
                 dailyTextSecondary.style.transition = 'transform 0.3s ease';
@@ -837,39 +871,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.querySelectorAll('.size-btn').forEach(btn => {
             btn.addEventListener('click', function() {
-            // Убираем активный класс у всех кнопок
                 document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
-                // Добавляем активный класс к нажатой кнопке
                 this.classList.add('active');
-                // Обновляем значение в скрытом select
                 const size = this.dataset.size;
                 DOMElements.boardSizeSelect.value = size;
-                
-                // Триггерим событие change для совместимости
                 DOMElements.boardSizeSelect.dispatchEvent(new Event('change'));
             });
         });
 
         document.querySelectorAll('.difficulty-btn').forEach(btn => {
             btn.addEventListener('click', function() {
-                // Убираем активный класс у всех кнопок
                 document.querySelectorAll('.difficulty-btn').forEach(b => b.classList.remove('active'));
-                // Добавляем активный класс к нажатой кнопке
                 this.classList.add('active');
-                // Обновляем значение в скрытом select
                 const difficulty = this.dataset.difficulty;
                 DOMElements.difficultySelect.value = difficulty;
-                
-                // Триггерим событие change для совместимости
                 DOMElements.difficultySelect.dispatchEvent(new Event('change'));
             });
         });
 
-    // Инициализация активной кнопки при загрузке
         const initialDifficulty = DOMElements.difficultySelect.value;
         document.querySelector(`.difficulty-btn[data-difficulty="${initialDifficulty}"]`).classList.add('active');
 
-    // Инициализация активной кнопки при загрузке
         const initialSize = DOMElements.boardSizeSelect.value;
         document.querySelector(`.size-btn[data-size="${initialSize}"]`).classList.add('active');
 

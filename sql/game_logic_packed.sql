@@ -77,7 +77,10 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
     ) RETURN CLOB;
 
     FUNCTION get_game_history(
-        p_user_id IN USERS.USER_ID%TYPE
+        p_user_id IN USERS.USER_ID%TYPE,
+        p_filter_size IN NUMBER,
+        p_filter_difficulty IN NUMBER,
+        p_filter_result IN VARCHAR2
     ) RETURN CLOB;
 
     FUNCTION save_user_image(
@@ -190,7 +193,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     AS
     BEGIN
         UPDATE GAMES
-        SET STATUS = p_status, COMPLETED_AT = NULL, CURRENT_MOVE_ORDER = NULL
+        SET STATUS = p_status, COMPLETED_AT = SYSDATE, CURRENT_MOVE_ORDER = NULL
         WHERE GAME_ID = p_game_id;
 
         DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_game_id;
@@ -349,7 +352,11 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             WHERE STATUS = 'ACTIVE'
         ) LOOP
             IF rec.EXPIRATION_TIME < SYSDATE THEN
-                terminate_game(rec.GAME_ID, 'TIMEOUT');
+                UPDATE GAMES
+                SET STATUS = 'TIMEOUT', COMPLETED_AT = rec.EXPIRATION_TIME, CURRENT_MOVE_ORDER = NULL
+                WHERE GAME_ID = rec.GAME_ID;
+
+                DELETE FROM MOVE_HISTORY WHERE GAME_ID = rec.GAME_ID;
             END IF;
         END LOOP;
         COMMIT;
@@ -507,23 +514,31 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     FUNCTION restart_game(p_session_id IN GAMES.GAME_ID%TYPE) RETURN CLOB
     AS
         l_game GAMES%ROWTYPE;
-        l_initial_state VARCHAR2(120);
+        l_new_game_id GAMES.GAME_ID%TYPE;
     BEGIN
-        SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id;
-        l_initial_state := l_game.INITIAL_BOARD_STATE;
 
-        DELETE FROM MOVE_HISTORY WHERE GAME_ID = p_session_id;
+        SELECT * INTO l_game FROM GAMES WHERE GAME_ID = p_session_id;
+
+        terminate_game(p_session_id, 'RESTARTED');
+
+        INSERT INTO GAMES (
+            GAME_ID, USER_ID, STATUS, BOARD_SIZE, SHUFFLE_MOVES, GAME_MODE, MOVE_COUNT,
+            IMAGE_ID, CHALLENGE_ID, START_TIME, COMPLETED_AT, STARS_EARNED,
+            OPTIMAL_MOVES, CURRENT_MOVE_ORDER, INITIAL_BOARD_STATE
+        ) VALUES (
+            GAMES_SEQ.NEXTVAL, l_game.USER_ID, 'ACTIVE', l_game.BOARD_SIZE, 
+            l_game.SHUFFLE_MOVES, l_game.GAME_MODE, 0,
+            l_game.IMAGE_ID, l_game.CHALLENGE_ID, SYSDATE, NULL, 0,
+            l_game.OPTIMAL_MOVES, 0, l_game.INITIAL_BOARD_STATE
+        )
+        RETURNING GAME_ID INTO l_new_game_id;
 
         INSERT INTO MOVE_HISTORY (MOVE_ID, GAME_ID, MOVE_ORDER, BOARD_STATE)
-        VALUES (MOVE_HISTORY_SEQ.NEXTVAL, p_session_id, 0, l_initial_state);
-
-        UPDATE GAMES
-        SET MOVE_COUNT = 0, CURRENT_MOVE_ORDER = 0, START_TIME = SYSDATE
-        WHERE GAME_ID = p_session_id;
+        VALUES (MOVE_HISTORY_SEQ.NEXTVAL, l_new_game_id, 0, l_game.INITIAL_BOARD_STATE);
 
         COMMIT;
 
-        RETURN get_game_state_json(p_session_id);
+        RETURN get_game_state_json(l_new_game_id);
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
             RAISE_APPLICATION_ERROR(-20001, 'Game session not found');
@@ -740,25 +755,78 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             RETURN '{"leaderboard": [], "current_time_raw": "' || TO_CHAR(SYSDATE, 'YYYY-MM-DD"T"HH24:MI:SS') || '"}';
     END get_leaderboards;
 
-    FUNCTION get_game_history(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB
+    FUNCTION get_game_history(
+        p_user_id IN USERS.USER_ID%TYPE,
+        p_filter_size IN NUMBER,
+        p_filter_difficulty IN NUMBER,
+        p_filter_result IN VARCHAR2
+    ) RETURN CLOB
     AS
         l_json CLOB;
+        l_query VARCHAR2(4000);
+        l_has_size_filter BOOLEAN := p_filter_size > 0;
+        l_has_difficulty_filter BOOLEAN := p_filter_difficulty > 0;
     BEGIN
-        SELECT JSON_ARRAYAGG(
-            JSON_OBJECT(
-                'gameId' VALUE g.GAME_ID,
-                'date'   VALUE TO_CHAR(g.START_TIME, 'DD.MM.YYYY HH24:MI'),
-                'size'   VALUE g.BOARD_SIZE,
-                'moves'  VALUE g.MOVE_COUNT,
-                'time'   VALUE GREATEST(ROUND((g.COMPLETED_AT - g.START_TIME) * 86400), 1),
-                'status' VALUE g.STATUS,
-                'stars'  VALUE g.STARS_EARNED
-            ) ORDER BY g.START_TIME DESC
-            RETURNING CLOB
-        )
-        INTO l_json
-        FROM GAMES g
-        WHERE g.USER_ID = p_user_id AND g.STATUS IN ('SOLVED', 'ABANDONED', 'TIMEOUT');
+        l_query := q'[
+            SELECT JSON_ARRAYAGG(
+                JSON_OBJECT(
+                    'gameId' VALUE g.GAME_ID,
+                    'date'   VALUE TO_CHAR(g.START_TIME, 'DD.MM.YYYY HH24:MI'),
+                    'size'   VALUE g.BOARD_SIZE,
+                    'moves'  VALUE g.MOVE_COUNT,
+                    'time'   VALUE GREATEST(ROUND((g.COMPLETED_AT - g.START_TIME) * 86400), 1),
+                    'status' VALUE g.STATUS,
+                    'stars'  VALUE g.STARS_EARNED,
+                    'shuffleMoves' VALUE g.SHUFFLE_MOVES
+                ) ORDER BY g.START_TIME DESC
+                RETURNING CLOB
+            )
+            FROM GAMES g
+            WHERE g.USER_ID = :user_id
+        ]';
+        
+        IF p_filter_result = 'abandoned' THEN
+            l_query := l_query || q'[
+                AND g.STATUS IN ('ABANDONED', 'TIMEOUT')
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM GAMES s
+                    WHERE s.USER_ID = g.USER_ID
+                      AND s.STATUS = 'SOLVED'
+                      AND COALESCE(TO_CHAR(s.CHALLENGE_ID), s.INITIAL_BOARD_STATE) = 
+                          COALESCE(TO_CHAR(g.CHALLENGE_ID), g.INITIAL_BOARD_STATE)
+                )
+            ]';
+        ELSE
+            l_query := l_query || q'[ AND g.STATUS IN ('SOLVED', 'ABANDONED', 'TIMEOUT') ]';
+            
+            IF p_filter_result IS NOT NULL THEN
+                IF p_filter_result = 'solved' THEN
+                    l_query := l_query || q'[ AND g.STATUS = 'SOLVED' ]';
+                ELSIF p_filter_result = 'timeout' THEN
+                    l_query := l_query || q'[ AND g.STATUS = 'TIMEOUT' ]';
+                END IF;
+            END IF;
+        END IF;
+        
+        IF l_has_size_filter THEN
+            l_query := l_query || q'[ AND g.BOARD_SIZE = :size_param ]';
+        END IF;
+        
+        IF l_has_difficulty_filter THEN
+            l_query := l_query || q'[ AND g.SHUFFLE_MOVES = :difficulty_param ]';
+        END IF;
+    
+        CASE 
+            WHEN l_has_size_filter AND l_has_difficulty_filter THEN
+                EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id, p_filter_size, p_filter_difficulty;
+            WHEN l_has_size_filter THEN
+                EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id, p_filter_size;
+            WHEN l_has_difficulty_filter THEN
+                EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id, p_filter_difficulty;
+            ELSE
+                EXECUTE IMMEDIATE l_query INTO l_json USING p_user_id;
+        END CASE;
 
         IF l_json IS NULL OR DBMS_LOB.GETLENGTH(l_json) = 0 THEN
             RETURN '[]';
@@ -775,23 +843,20 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
     ) RETURN VARCHAR2
     AS
         l_image_id      USER_IMAGES.IMAGE_ID%TYPE;
-        l_old_file_path USER_IMAGES.FILE_PATH%TYPE := NULL; -- Переменная для старого пути
+        l_old_file_path USER_IMAGES.FILE_PATH%TYPE := NULL;
     BEGIN
-        -- Попробовать найти существующую картинку по хэшу
+
         SELECT IMAGE_ID, FILE_PATH
-        INTO l_image_id, l_old_file_path -- Сохраняем и ID, и СТАРЫЙ ПУТЬ
+        INTO l_image_id, l_old_file_path
         FROM USER_IMAGES
         WHERE USER_ID = p_user_id AND IMAGE_HASH = p_image_hash;
 
-        -- Нашли: файл был удален или загружен заново.
-        -- Обновляем путь на новый и дату загрузки.
         UPDATE USER_IMAGES
         SET FILE_PATH = p_file_path, UPLOADED_AT = SYSDATE
         WHERE IMAGE_ID = l_image_id;
 
         COMMIT;
         
-        -- === FIX: ВОЗВРАЩАЕМ УСПЕХ №1 (для случая UPDATE) ===
         RETURN JSON_OBJECT(
             'success'         VALUE true,
             'status'          VALUE 'uploaded',
@@ -804,14 +869,12 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
 
     EXCEPTION
         WHEN NO_DATA_FOUND THEN
-            -- Не нашли: это действительно новая картинка. Вставляем.
             INSERT INTO USER_IMAGES (IMAGE_ID, USER_ID, MIME_TYPE, FILE_PATH, IMAGE_HASH, UPLOADED_AT)
             VALUES (USER_IMAGES_SEQ.NEXTVAL, p_user_id, p_mime_type, p_file_path, p_image_hash, SYSDATE)
             RETURNING IMAGE_ID INTO l_image_id;
 
             COMMIT;
             
-            -- === FIX: ВОЗВРАЩАЕМ УСПЕХ №2 (для случая INSERT) ===
             RETURN JSON_OBJECT(
                 'success'         VALUE true,
                 'status'          VALUE 'uploaded',
@@ -825,8 +888,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         WHEN OTHERS THEN
             ROLLBACK;
             RETURN '{"success": false, "error": "' || SQLERRM || '"}';
-            
-    -- === FIX: Лишний END; убран, теперь здесь правильный END <имя_функции> ===
     END save_user_image;
 
     FUNCTION get_user_images(p_user_id IN USERS.USER_ID%TYPE) RETURN CLOB
@@ -840,7 +901,11 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         FROM USER_IMAGES
         WHERE USER_ID = p_user_id AND FILE_PATH IS NOT NULL;
 
-        RETURN NVL(l_json, '[]');
+        IF l_json IS NULL OR DBMS_LOB.GETLENGTH(l_json) = 0 THEN
+            RETURN '[]';
+        END IF;
+
+        RETURN l_json;
     END get_user_images;
 
     FUNCTION get_default_images RETURN CLOB
@@ -852,7 +917,11 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         FROM USER_IMAGES
         WHERE USER_ID IS NULL;
 
-        RETURN NVL(l_json, '[]');
+        IF l_json IS NULL OR DBMS_LOB.GETLENGTH(l_json) = 0 THEN
+            RETURN '[]';
+        END IF;
+
+        RETURN l_json;
     END get_default_images;
 
     PROCEDURE get_default_image_data(
@@ -903,7 +972,6 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         WHEN OTHERS THEN
             ROLLBACK;
             RETURN JSON_OBJECT('success' VALUE false, 'message' VALUE SQLERRM);
-
     END delete_user_image;
 
     FUNCTION get_hint(p_session_id IN GAMES.GAME_ID%TYPE) RETURN VARCHAR2
@@ -935,7 +1003,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_shuffle_moves  NUMBER;
         l_shuffled_board VARCHAR2(120);
         l_optimal_moves  NUMBER;
-        l_next_day       DATE := TRUNC(SYSDATE) + 1;
+        l_next_day       DATE := TRUNC(SYSDATE);
         l_count          NUMBER;
         l_target_state   VARCHAR2(120);
         l_image_or_int   NUMBER;

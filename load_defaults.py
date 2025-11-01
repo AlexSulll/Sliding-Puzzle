@@ -3,22 +3,13 @@ import oracledb
 import hashlib
 import mimetypes
 
-# --- НАСТРОЙКИ ПОДКЛЮЧЕНИЯ К БАЗЕ ДАННЫХ ---
-# (Убедитесь, что они соответствуют вашему файлу app.py)
 DB_USER = "PUZZLEGAME"
 DB_PASSWORD = "qwertylf1"
 DB_DSN = "localhost:1521/XEPDB1"
 
-# --- НАСТРОЙКИ СКРИПТА ---
-# Папка, в которую вы положили стандартные картинки
 IMAGE_DIR = "default_images"
 
 def load_default_images():
-    """
-    Скрипт для одноразовой загрузки стандартных изображений в БД.
-    Изображения добавляются в таблицу USER_IMAGES с USER_ID = NULL.
-    Скрипт можно безопасно запускать несколько раз, дубликаты не создадутся.
-    """
     if not os.path.exists(IMAGE_DIR):
         print(f"Ошибка: Папка '{IMAGE_DIR}' не найдена.")
         return
@@ -28,26 +19,21 @@ def load_default_images():
             with connection.cursor() as cursor:
                 print("Подключение к базе данных успешно.")
                 
-                for filename in sorted(os.listdir(IMAGE_DIR)): # Сортируем для предсказуемого порядка
+                for filename in sorted(os.listdir(IMAGE_DIR)):
                     file_path = os.path.join(IMAGE_DIR, filename)
                     if os.path.isfile(file_path):
                         try:
-                            # Читаем файл как бинарные данные
                             with open(file_path, 'rb') as f:
                                 image_data = f.read()
 
-                            # Вычисляем хеш и приводим к верхнему регистру
                             image_hash = hashlib.sha256(image_data).hexdigest().upper()
                             
-                            # Определяем MIME-тип
                             mime_type, _ = mimetypes.guess_type(file_path)
                             if mime_type is None:
                                 mime_type = 'application/octet-stream'
 
                             print(f"Обработка файла: {filename}...")
 
-                            # --- ИСПРАВЛЕННЫЙ ЗАПРОС ---
-                            # Добавлено поле UPLOADED_AT со значением SYSDATE, чтобы избежать ошибки ORA-01400
                             sql_merge = """
                                 MERGE INTO user_images t
                                 USING (SELECT :hash AS image_hash FROM dual) s
@@ -63,7 +49,6 @@ def load_default_images():
                                 'hash': image_hash
                             })
                             
-                            # Проверяем, была ли вставка
                             if cursor.rowcount > 0:
                                 print(f"  > Успешно добавлено: {filename}")
                             else:

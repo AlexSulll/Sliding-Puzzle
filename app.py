@@ -151,7 +151,7 @@ def handle_action():
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_leaderboards', oracledb.DB_TYPE_CLOB, [params.get('size', 0), params.get('difficulty', 0)])
 
         elif action == 'get_game_history':
-            result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_game_history', oracledb.DB_TYPE_CLOB, [user_id])
+            result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_game_history', oracledb.DB_TYPE_CLOB, [user_id, params.get('size', 0), params.get('difficulty', 0), params.get('result', '0')])
         
         elif action == 'get_default_images':
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_default_images', oracledb.DB_TYPE_CLOB)
@@ -200,7 +200,11 @@ def handle_action():
         
         elif action == 'restart':
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.restart_game', oracledb.DB_TYPE_CLOB, [game_session_id])
-            
+            game_data = json.loads(result_clob.read())
+
+            if game_data.get('sessionId'):
+                session['game_session_id'] = game_data.get('sessionId')
+
         elif action == 'get_daily_leaderboard':
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_daily_leaderboard', oracledb.DB_TYPE_CLOB)
                         
