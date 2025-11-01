@@ -156,12 +156,8 @@ def handle_action():
                 session['game_session_id'] = game_id_to_resume
                 result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_game_state_json', oracledb.DB_TYPE_CLOB, [game_id_to_resume])
 
-                # --- V --- ЭТО ИСПРАВЛЕНИЕ --- V ---
-                
-                # 1. Читаем CLOB в JSON
                 game_data = json.loads(result_clob.read())
                 
-                # 2. Проверяем, на месте ли файл картинки
                 image_url = game_data.get('imageUrl')
                 if game_data.get('gameMode') == 'IMAGE' and image_url and image_url.startswith('/uploads/'):
                     filename = os.path.basename(image_url)
@@ -169,11 +165,8 @@ def handle_action():
                     if not os.path.exists(filepath):
                         game_data['imageMissing'] = True
                         
-                # 3. Возвращаем результат!
                 return jsonify(game_data)
-                
-                # --- ^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^ ---
-                
+                   
             except Exception as e:
                 return jsonify({"error": str(e)}), 500
             
@@ -241,7 +234,7 @@ def handle_action():
                     full_file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                     if os.path.exists(full_file_path):
                         os.remove(full_file_path)
-                        db_response['message'] = 'Image record and file deleted' # Обновляем сообщение для клиента
+                        db_response['message'] = 'Image record and file deleted'
                     else:
                         db_response['message'] = 'Image record deleted, but file not found on disk'
 
@@ -270,7 +263,6 @@ def handle_action():
                 oracledb.DB_TYPE_CLOB, 
                 [game_session_id, new_mode, new_image_id]
             )
-            # Эта функция возвращает полный JSON состояния игры
             return result_clob.read(), 200, {'Content-Type': 'application/json'}
         
         elif action == 'get_daily_leaderboard':

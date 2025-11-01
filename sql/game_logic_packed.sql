@@ -895,7 +895,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             RETURN JSON_OBJECT(
                 'success'         VALUE true,
                 'status'          VALUE 'uploaded',
-                'old_file_path'   VALUE NULL, -- Это новый файл, старого пути нет
+                'old_file_path'   VALUE NULL,
                 'newImage'        VALUE JSON_OBJECT(
                     'id'   VALUE l_image_id,
                     'path' VALUE p_file_path
