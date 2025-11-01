@@ -134,7 +134,22 @@ document.addEventListener('DOMContentLoaded', () => {
         handleLogin: async (event) => { event.preventDefault(); auth.hideError(); const username = document.getElementById('login-username').value.trim(); const password = document.getElementById('login-password').value; if (!username || !password) { auth.showError('Пожалуйста, заполните все поля'); return; } const loginBtn = document.getElementById('login-btn'); const originalText = loginBtn.innerHTML; loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Вход...'; loginBtn.disabled = true; try { const response = await api.login(username, auth.hashPassword(password)); if (response && response.success) { auth.onLoginSuccess(response.user); } else { auth.showError(response?.message || 'Неверное имя пользователя или пароль'); } } catch (error) { auth.showError('Ошибка соединения. Попробуйте позже.'); } finally { loginBtn.innerHTML = originalText; loginBtn.disabled = false; } },
         handleRegister: async (event) => { event.preventDefault(); auth.hideError(); const username = document.getElementById('register-username').value.trim(); const password = document.getElementById('register-password').value; const usernameValidation = auth.validateUsername(username); if (!usernameValidation.isValid) { auth.showError(usernameValidation.message); return; } if (!password) { auth.showError('Пожалуйста, введите пароль'); return; } if (password.length < 8) { auth.showError('Пароль должен содержать минимум 8 символов'); return; } const registerBtn = document.getElementById('register-btn'); const originalText = registerBtn.innerHTML; registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Регистрация...'; registerBtn.disabled = true; try { const response = await api.register(username, auth.hashPassword(password)); if (response && response.success) { auth.onLoginSuccess(response.user); } else { auth.showError(response?.message || 'Ошибка регистрации. Возможно, имя пользователя уже занято.'); } } catch (error) { auth.showError('Ошибка соединения. Попробуйте позже.'); } finally { registerBtn.innerHTML = originalText; registerBtn.disabled = false; } },
         handleLogout: async () => { await api.logout(); state.currentUser = null; ui.updateLoginState(); if (DOMElements.userStatsPanel) DOMElements.userStatsPanel.classList.add('hidden'); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); auth.clearForms(); auth.hideError(); },
-        onLoginSuccess: async (userData, activeGameId = null) => { state.currentUser = userData; state.activeGameSessionId = activeGameId; ui.loadImages(); await ui.renderUserStats(); await ui.updateLoginState(); ui.showScreen('settings'); auth.hideError(); auth.clearForms(); },
+        onLoginSuccess: async (userData, activeGameId = null) => {
+            state.currentUser = userData;
+            state.activeGameSessionId = activeGameId;
+            ui.loadImages();
+            await ui.renderUserStats();
+            await ui.updateLoginState();
+            
+            if (state.activeGameSessionId) {
+                game.resume(state.activeGameSessionId);
+            } else {
+                ui.showScreen('settings');
+            }
+            
+            auth.hideError();
+            auth.clearForms();
+        },
         checkStatus: async () => { const response = await api.getStatus(); if (response && response.isLoggedIn) { auth.onLoginSuccess(response.user, response.activeGameSessionId); } else { ui.showScreen('auth'); } }
     };
 
@@ -232,6 +247,52 @@ document.addEventListener('DOMContentLoaded', () => {
         resume: async (gameId) => {
             const gameState = await api.performAction('resume_game', { gameId: gameId }, 'Загрузка игры...');
             
+            if (gameState && gameState.imageMissing) {
+                state.currentReplayId = null; 
+
+                let newMode = null;
+                let newImageId = null;
+
+                const choiceStandard = confirm("Картинка для этой игры была удалена. Хотите выбрать стандартную картинку?");
+
+                if (choiceStandard) {
+                    newMode = 'IMAGE';
+                    newImageId = Math.floor(Math.random() * 3) + 1;
+                } else {
+                    const choiceUpload = confirm("Хотите загрузить новую картинку?");
+                    if (choiceUpload) {
+                        state.isUploadingForGameStart = true;
+                        ui.showScreen('settings');
+                        DOMElements.uploadLabel.click();
+                        return;
+                    } else {
+                        const choiceNumbers = confirm("Тогда продолжить с числами?");
+                        if (choiceNumbers) {
+                            newMode = 'INTS';
+                            newImageId = null;
+                        } else {
+                            ui.showScreen('settings');
+                            return; 
+                        }
+                    }
+                }
+                
+                const updatedGameState = await api.performAction('update_game_visuals', {
+                    gameMode: newMode,
+                    imageId: newImageId
+                }, 'Обновление игры...');
+
+                if (updatedGameState && updatedGameState.sessionId) {
+                    ui.showScreen('game');
+                    ui.render(updatedGameState);
+                    timer.start(updatedGameState.timeRemaining);
+                } else {
+                    alert("Не удалось обновить игру.");
+                    ui.showScreen('settings');
+                }
+                return;
+            }
+
             if (gameState && gameState.sessionId) {
                 ui.showScreen('game');
                 ui.render(gameState);
@@ -376,7 +437,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     state.imageId = res.newImage.id;
                     state.gameMode = 'IMAGE';
                     await ui.loadImages();
-                    game.start(true, state.currentReplayId);
+                    if (state.activeGameSessionId) {
+                        const updatedGameState = await api.performAction('update_game_visuals', {
+                            gameMode: 'IMAGE',
+                            imageId: state.imageId
+                        }, 'Обновление игры...');
+                        
+                        if (updatedGameState && updatedGameState.sessionId) {
+                            ui.showScreen('game');
+                            ui.render(updatedGameState);
+                            timer.start(updatedGameState.timeRemaining);
+                        } else {
+                            alert("Не удалось обновить игру.");
+                            ui.showScreen('settings');
+                        }
+                    } else {
+                        game.start(true, state.currentReplayId);
+                    }
                 } else {
                     await ui.loadImages();
                 }
@@ -666,13 +743,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 const row = document.createElement('tr');
+                const imageIdData = game.imageId ? `data-image-id="${game.imageId}"` : '';
+                const gameModeData = game.gameMode ? `data-game-mode="${game.gameMode}"` : 'data-game-mode="INTS"';
                 row.innerHTML = `
                     <td>${game.date}</td>
                     <td>${game.size}x${game.size}</td>
                     <td>${moves}</td>
                     <td>${timeStr}</td>
                     <td>${statusText}</td>
-                    <td><button class="replay-btn ${shouldPulse ? 'pulsing' : ''}" data-game-id="${game.gameId}"><i class="fas fa-play"></i> Переиграть</button></td>
+                    <td><button class="replay-btn ${shouldPulse ? 'pulsing' : ''}" data-game-id="${game.gameId}" ${imageIdData} ${gameModeData}><i class="fas fa-play"></i> Переиграть</button></td>
                 `;
                 tbody.appendChild(row);
             });
@@ -816,9 +895,27 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.applyFiltersBtn.addEventListener('click', ui.renderLeaderboards);
         DOMElements.restartBtn.addEventListener('click', game.restart);
         DOMElements.historyTableContainer.addEventListener('click', (event) => {
-            if (event.target && event.target.classList.contains('replay-btn')) {
-                const gameId = event.target.dataset.gameId;
+            const replayButton = event.target.closest('.replay-btn');
+            
+            if (replayButton) {
+                const gameId = replayButton.dataset.gameId;
                 if (gameId) {
+                    const imageId = replayButton.dataset.imageId || null;
+                    const gameMode = replayButton.dataset.gameMode || 'INTS';
+                    state.gameMode = gameMode;
+                    state.imageId = imageId;
+                    
+                    if (gameMode === 'IMAGE') {
+                        document.getElementById('mode-image').checked = true;
+                        DOMElements.imageSelection.classList.remove('hidden');
+                        document.querySelectorAll('.preview-img').forEach(img => {
+                            img.classList.toggle('selected', img.dataset.imageId == imageId);
+                        });
+                    } else {
+                        document.getElementById('mode-numbers').checked = true;
+                        DOMElements.imageSelection.classList.add('hidden');
+                    }
+                    
                     game.start(true, parseInt(gameId, 10));
                 }
             }

@@ -154,8 +154,25 @@ def handle_action():
                     return jsonify({"error": "Активная игра не найдена или не принадлежит вам."}), 404
                 
                 session['game_session_id'] = game_id_to_resume
-
                 result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_game_state_json', oracledb.DB_TYPE_CLOB, [game_id_to_resume])
+
+                # --- V --- ЭТО ИСПРАВЛЕНИЕ --- V ---
+                
+                # 1. Читаем CLOB в JSON
+                game_data = json.loads(result_clob.read())
+                
+                # 2. Проверяем, на месте ли файл картинки
+                image_url = game_data.get('imageUrl')
+                if game_data.get('gameMode') == 'IMAGE' and image_url and image_url.startswith('/uploads/'):
+                    filename = os.path.basename(image_url)
+                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                    if not os.path.exists(filepath):
+                        game_data['imageMissing'] = True
+                        
+                # 3. Возвращаем результат!
+                return jsonify(game_data)
+                
+                # --- ^ --- КОНЕЦ ИСПРАВЛЕНИЯ --- ^ ---
                 
             except Exception as e:
                 return jsonify({"error": str(e)}), 500
@@ -241,6 +258,21 @@ def handle_action():
             if game_data.get('sessionId'):
                 session['game_session_id'] = game_data.get('sessionId')
 
+        elif action == 'update_game_visuals':
+            if not game_session_id:
+                return jsonify({"error": "No active game session"}), 400
+            
+            new_mode = params.get('gameMode')
+            new_image_id = params.get('imageId')
+            
+            result_clob = cursor.callfunc(
+                'GAME_MANAGER_PKG.update_game_visuals', 
+                oracledb.DB_TYPE_CLOB, 
+                [game_session_id, new_mode, new_image_id]
+            )
+            # Эта функция возвращает полный JSON состояния игры
+            return result_clob.read(), 200, {'Content-Type': 'application/json'}
+        
         elif action == 'get_daily_leaderboard':
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_daily_leaderboard', oracledb.DB_TYPE_CLOB)
                         

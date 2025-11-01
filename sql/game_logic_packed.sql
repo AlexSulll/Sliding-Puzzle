@@ -182,6 +182,12 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_user_id IN USERS.USER_ID%TYPE
     ) RETURN NUMBER;
 
+    FUNCTION update_game_visuals (
+        p_session_id IN GAMES.GAME_ID%TYPE,
+        p_game_mode  IN GAMES.GAME_MODE%TYPE,
+        p_image_id   IN GAMES.IMAGE_ID%TYPE
+    ) RETURN CLOB;
+
 END GAME_MANAGER_PKG;
 /
 
@@ -428,12 +434,16 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                 l_challenge_id      := l_original_game.CHALLENGE_ID;
                 l_optimal_moves     := l_original_game.OPTIMAL_MOVES;
 
-                IF p_image_id IS NOT NULL THEN
-                    l_image_id_to_use := p_image_id;
-                    l_game_mode_to_use := 'IMAGE';
+                l_game_mode_to_use := p_game_mode;
+
+                IF l_game_mode_to_use = 'IMAGE' THEN
+                    IF p_image_id IS NOT NULL THEN
+                        l_image_id_to_use := p_image_id;
+                    ELSE
+                        l_image_id_to_use := l_original_game.IMAGE_ID;
+                    END IF;
                 ELSE
-                    l_image_id_to_use  := l_original_game.IMAGE_ID;
-                    l_game_mode_to_use := l_original_game.GAME_MODE;
+                    l_image_id_to_use := NULL;
                 END IF;
             END;
         ELSIF p_is_daily_challenge THEN
@@ -782,7 +792,9 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
                     'time'   VALUE GREATEST(ROUND((g.COMPLETED_AT - g.START_TIME) * 86400), 1),
                     'status' VALUE g.STATUS,
                     'stars'  VALUE g.STARS_EARNED,
-                    'shuffleMoves' VALUE g.SHUFFLE_MOVES
+                    'shuffleMoves' VALUE g.SHUFFLE_MOVES,
+                    'gameMode' VALUE g.GAME_MODE,
+                    'imageId'  VALUE g.IMAGE_ID
                 ) ORDER BY g.START_TIME DESC
                 RETURNING CLOB
             )
@@ -1523,5 +1535,32 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         END;
         RETURN l_game_id;
     END get_active_game_id;
+
+    FUNCTION update_game_visuals (
+        p_session_id IN GAMES.GAME_ID%TYPE,
+        p_game_mode  IN GAMES.GAME_MODE%TYPE,
+        p_image_id   IN GAMES.IMAGE_ID%TYPE
+    ) RETURN CLOB
+    AS
+        l_game_id GAMES.GAME_ID%TYPE;
+    BEGIN
+        SELECT GAME_ID INTO l_game_id
+        FROM GAMES
+        WHERE GAME_ID = p_session_id AND STATUS = 'ACTIVE';
+
+        UPDATE GAMES
+        SET 
+            GAME_MODE = p_game_mode,
+            IMAGE_ID = p_image_id
+        WHERE GAME_ID = p_session_id;
+        
+        COMMIT;
+
+        RETURN get_game_state_json(p_session_id);
+
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RETURN '{"status":"error", "message":"Active game session not found"}';
+    END update_game_visuals;
 
 END GAME_MANAGER_PKG;
