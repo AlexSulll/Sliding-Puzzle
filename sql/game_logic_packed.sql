@@ -178,6 +178,10 @@ CREATE OR REPLACE PACKAGE GAME_MANAGER_PKG AS
         p_size      IN NUMBER
     ) RETURN GAME_MANAGER_PKG.t_board;
 
+    FUNCTION get_active_game_id (
+        p_user_id IN USERS.USER_ID%TYPE
+    ) RETURN NUMBER;
+
 END GAME_MANAGER_PKG;
 /
 
@@ -737,6 +741,7 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
         l_query := l_query || q'[
                 GROUP BY g.USER_ID
             ) us ON u.USER_ID = us.USER_ID
+        WHERE NVL(ss.solved_games, 0) > 0 OR NVL(us.unfinished_games, 0) > 0
         ]';
 
         IF p_filter_size > 0 AND p_filter_difficulty > 0 THEN
@@ -1500,4 +1505,23 @@ CREATE OR REPLACE PACKAGE BODY GAME_MANAGER_PKG AS
             RETURN '{"leaderboard": [], "current_time_raw": "' || TO_CHAR(SYSDATE, 'YYYY-MM-DD"T"HH24:MI:SS') || '"}';
     END get_daily_leaderboard;
     
+    FUNCTION get_active_game_id (
+        p_user_id IN USERS.USER_ID%TYPE
+    ) RETURN NUMBER
+    AS
+        l_game_id   GAMES.GAME_ID%TYPE := NULL;
+    BEGIN
+        cleanup_expired_games;
+        BEGIN
+            SELECT GAME_ID 
+            INTO l_game_id 
+            FROM GAMES 
+            WHERE USER_ID = p_user_id AND STATUS = 'ACTIVE';
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                l_game_id := NULL;
+        END;
+        RETURN l_game_id;
+    END get_active_game_id;
+
 END GAME_MANAGER_PKG;

@@ -76,8 +76,27 @@ def logout():
 @app.route('/api/auth/status', methods=['GET'])
 def status():
     if 'user_id' in session:
-        return jsonify({"isLoggedIn": True, "user": {"id": session['user_id'], "name": session['username']}})
-    return jsonify({"isLoggedIn": False})
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            active_game_id = cursor.callfunc('GAME_MANAGER_PKG.get_active_game_id', oracledb.DB_TYPE_NUMBER, [session['user_id']])
+            
+            if not active_game_id or active_game_id == 0:
+                active_game_id = None
+            else:
+                active_game_id = int(active_game_id)
+                session['game_session_id'] = active_game_id 
+
+            return jsonify({
+                "isLoggedIn": True, 
+                "user": {"id": session['user_id'], "name": session['username']},
+                "activeGameSessionId": active_game_id 
+            })
+        finally:
+            cursor.close()
+            pool.release(conn)
+    
+    return jsonify({"isLoggedIn": False, "activeGameSessionId": None})
 
 @app.route('/api/action', methods=['POST'])
 def handle_action():
@@ -124,6 +143,23 @@ def handle_action():
                 session['game_session_id'] = game_data.get('sessionId')
             return jsonify(game_data)
 
+        elif action == 'resume_game':
+            game_id_to_resume = params.get('gameId')
+            try:
+                cursor.execute("SELECT GAME_ID FROM GAMES WHERE GAME_ID = :1 AND USER_ID = :2 AND STATUS = 'ACTIVE'", [game_id_to_resume, user_id])
+                game_check = cursor.fetchone()
+                
+                if not game_check:
+                    session.pop('game_session_id', None)
+                    return jsonify({"error": "Активная игра не найдена или не принадлежит вам."}), 404
+                
+                session['game_session_id'] = game_id_to_resume
+
+                result_clob = cursor.callfunc('GAME_MANAGER_PKG.get_game_state_json', oracledb.DB_TYPE_CLOB, [game_id_to_resume])
+                
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+            
         elif action == 'move':
             result_clob = cursor.callfunc('GAME_MANAGER_PKG.process_move', oracledb.DB_TYPE_CLOB, [game_session_id, params.get('tile')])
         

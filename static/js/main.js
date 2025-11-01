@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentUser: null,
         timerInterval: null,
         totalSeconds: 0,
+        activeGameSessionId: null,
         gameMode: 'INTS',
         imageUrl: null,
         imageId: null,
@@ -79,6 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
         historyFilterDifficulty: document.getElementById('history-filter-difficulty'),
         historyFilterUnfinished: document.getElementById('history-filter-unfinished'),
         applyHistoryFiltersBtn: document.getElementById('apply-history-filters-btn'),
+        backToGameBtn: document.getElementById('back-to-game-btn'),
     };
 
     const api = {
@@ -132,8 +134,8 @@ document.addEventListener('DOMContentLoaded', () => {
         handleLogin: async (event) => { event.preventDefault(); auth.hideError(); const username = document.getElementById('login-username').value.trim(); const password = document.getElementById('login-password').value; if (!username || !password) { auth.showError('Пожалуйста, заполните все поля'); return; } const loginBtn = document.getElementById('login-btn'); const originalText = loginBtn.innerHTML; loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Вход...'; loginBtn.disabled = true; try { const response = await api.login(username, auth.hashPassword(password)); if (response && response.success) { auth.onLoginSuccess(response.user); } else { auth.showError(response?.message || 'Неверное имя пользователя или пароль'); } } catch (error) { auth.showError('Ошибка соединения. Попробуйте позже.'); } finally { loginBtn.innerHTML = originalText; loginBtn.disabled = false; } },
         handleRegister: async (event) => { event.preventDefault(); auth.hideError(); const username = document.getElementById('register-username').value.trim(); const password = document.getElementById('register-password').value; const usernameValidation = auth.validateUsername(username); if (!usernameValidation.isValid) { auth.showError(usernameValidation.message); return; } if (!password) { auth.showError('Пожалуйста, введите пароль'); return; } if (password.length < 8) { auth.showError('Пароль должен содержать минимум 8 символов'); return; } const registerBtn = document.getElementById('register-btn'); const originalText = registerBtn.innerHTML; registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Регистрация...'; registerBtn.disabled = true; try { const response = await api.register(username, auth.hashPassword(password)); if (response && response.success) { auth.onLoginSuccess(response.user); } else { auth.showError(response?.message || 'Ошибка регистрации. Возможно, имя пользователя уже занято.'); } } catch (error) { auth.showError('Ошибка соединения. Попробуйте позже.'); } finally { registerBtn.innerHTML = originalText; registerBtn.disabled = false; } },
         handleLogout: async () => { await api.logout(); state.currentUser = null; ui.updateLoginState(); if (DOMElements.userStatsPanel) DOMElements.userStatsPanel.classList.add('hidden'); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); auth.clearForms(); auth.hideError(); },
-        onLoginSuccess: async (userData) => { state.currentUser = userData; ui.loadImages(); await ui.renderUserStats(); await ui.updateLoginState(); ui.showScreen('settings'); auth.hideError(); auth.clearForms(); },
-        checkStatus: async () => { const response = await api.getStatus(); if (response && response.isLoggedIn) { auth.onLoginSuccess(response.user); } else { ui.showScreen('auth'); } }
+        onLoginSuccess: async (userData, activeGameId = null) => { state.currentUser = userData; state.activeGameSessionId = activeGameId; ui.loadImages(); await ui.renderUserStats(); await ui.updateLoginState(); ui.showScreen('settings'); auth.hideError(); auth.clearForms(); },
+        checkStatus: async () => { const response = await api.getStatus(); if (response && response.isLoggedIn) { auth.onLoginSuccess(response.user, response.activeGameSessionId); } else { ui.showScreen('auth'); } }
     };
 
     const game = {
@@ -184,7 +186,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (gameState && gameState.active_session_found && !replayGameId) {
-                if (confirm('У вас есть незаконченная игра. Хотите продолжить?')) {
+                if (confirm('У вас есть незаконченная игра. Хотите продолжить игру?')) {
+                    state.activeGameSessionId = gameState.sessionId;
                     ui.showScreen('game');
                     ui.render(gameState);
                     timer.start(gameState.timeRemaining);
@@ -195,6 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (gameState && gameState.sessionId) {
+                state.activeGameSessionId = gameState.sessionId;
                 state.currentReplayId = null;
                 ui.showScreen('game');
                 ui.render(gameState);
@@ -213,10 +217,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const gameState = await api.performAction('redo', {}, 'Возврат хода...');
             if (gameState) ui.render(gameState); 
         },
-        abandon: async () => { await api.performAction('abandon'); timer.stop(); ui.resetSettingsToDefault(); ui.showScreen('settings'); },
-        playAgain: () => { timer.stop(); ui.resetSettingsToDefault(); ui.showScreen('settings'); },
+        abandon: async () => { await api.performAction('abandon'); timer.stop(); state.activeGameSessionId = null; ui.resetSettingsToDefault(); ui.showScreen('settings'); },
+        playAgain: () => { timer.stop(); state.activeGameSessionId = null; ui.resetSettingsToDefault(); ui.showScreen('settings'); },
         hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
-        timeout: async () => { await api.performAction('timeout'); timer.stop(); ui.showScreen('settings'); },
+        timeout: async () => { await api.performAction('timeout'); timer.stop(); state.activeGameSessionId = null; ui.showScreen('settings'); },
         restart: async () => { 
             const gameState = await api.performAction('restart', {}, 'Перезапуск игры...');
             if (gameState) { 
@@ -224,6 +228,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 ui.render(gameState); 
                 timer.start(gameState.timeRemaining); 
             } 
+        },
+        resume: async (gameId) => {
+            const gameState = await api.performAction('resume_game', { gameId: gameId }, 'Загрузка игры...');
+            
+            if (gameState && gameState.sessionId) {
+                ui.showScreen('game');
+                ui.render(gameState);
+                timer.start(gameState.timeRemaining);
+            } else {
+                state.activeGameSessionId = null;
+                ui.showScreen('settings');
+            }
         },
     };
     
@@ -387,6 +403,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }); 
             }
             
+            if (state.activeGameSessionId && screenName !== 'game') {
+                DOMElements.backToGameBtn.classList.remove('hidden');
+            } else {
+                DOMElements.backToGameBtn.classList.add('hidden');
+            }
+
             if (screenName === 'leaderboard') { 
                 ui.renderLeaderboards(); 
             }
@@ -424,6 +446,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (status === 'SOLVED') {
                 timer.stop();
+                state.activeGameSessionId = null;
                 DOMElements.winMoves.textContent = moves;
                 const timeElapsed = gameState.duration;
                 DOMElements.winTime.textContent = ui.formatTime(timeElapsed);
@@ -623,7 +646,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let timeStr = ui.formatTime(game.time);
                 let statusText = '';
                 let moves = game.moves;
-                const shouldPulse = game.stars > 0 && game.stars < 3;
+                const shouldPulse = game.stars != 3;
 
                 if (game.status === 'SOLVED') {
                     statusText = game.stars > 0 ? `<span class="status-solved">${'★'.repeat(game.stars)}</span>` : 'Решено';
@@ -631,7 +654,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     statusText = '<span class="status-abandoned">Сдался</span>';
                 } else if (game.status === 'TIMEOUT') {
                     statusText = '<span class="status-timeout">Время вышло</span>';
-                    timeStr = '--:--'
+                    if (game.size === 3) {
+                        timeStr = '08:00'
+                    } else if (game.size === 4) {
+                        timeStr = '10:00'
+                    } else if (game.size === 5) {
+                        timeStr = '13:00'
+                    } else {
+                        timeStr = '15:00'
+                    }
                 }
 
                 const row = document.createElement('tr');
@@ -916,6 +947,15 @@ document.addEventListener('DOMContentLoaded', () => {
             state.isDaily = true;
             DOMElements.regularSettings.classList.add('hidden');
             game.start(false, null);
+        });
+
+        DOMElements.backToGameBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (state.activeGameSessionId) {
+                game.resume(state.activeGameSessionId);
+            } else {
+                ui.showScreen('game');
+            }
         });
 
         auth.checkStatus();

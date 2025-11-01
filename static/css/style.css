@@ -1096,3 +1096,37 @@ h2 {
 .clickable-separator .table-separator {
     color: var(--primary-color);
 }
+
+.back-to-game-btn {
+    position: fixed;
+    left: calc(50% - 275px - 10px); 
+    transform: translateX(-100%); 
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 24px;
+    font-size: 1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    background-color: var(--primary-color);
+    color: white;
+    box-shadow: var(--shadow);
+    z-index: 1001;
+}
+
+.back-to-game-btn:hover {
+    background-color: var(--primary-color-hover);
+}
+
+.back-to-game-btn i {
+    margin: 0;
+}
+
+.back-to-game-btn.hidden {
+    display: none;
+}
