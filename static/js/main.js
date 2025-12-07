@@ -217,20 +217,23 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         },
         move: async (tileValue) => { 
+            if (!state.activeGameSessionId) return;
             const gameState = await api.performAction('move', { tile: tileValue }, 'Обработка хода...'); 
             if (gameState) ui.render(gameState); 
         },
         undo: async () => { 
+            if (!state.activeGameSessionId) return;
             const gameState = await api.performAction('undo', {}, 'Отмена хода...');
             if (gameState) ui.render(gameState); 
         },
         redo: async () => { 
+            if (!state.activeGameSessionId) return;
             const gameState = await api.performAction('redo', {}, 'Возврат хода...');
             if (gameState) ui.render(gameState); 
         },
         abandon: async () => { await api.performAction('abandon'); timer.stop(); state.activeGameSessionId = null; ui.resetSettingsToDefault(); ui.showScreen('settings'); },
         playAgain: () => { timer.stop(); state.activeGameSessionId = null; ui.resetSettingsToDefault(); ui.showScreen('settings'); },
-        hint: async () => { const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
+        hint: async () => { if (!state.activeGameSessionId) return; const data = await api.performAction('hint'); if(data && data.hint) { ui.highlightHint(data.hint); } },
         timeout: async () => { await api.performAction('timeout'); timer.stop(); state.activeGameSessionId = null; ui.showScreen('settings'); },
         restart: async () => { 
             const gameState = await api.performAction('restart', {}, 'Перезапуск игры...');
@@ -408,6 +411,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const file = event.target.files[0];
             if (!file) return;
 
+            DOMElements.customImageName.textContent = '';
+            
             const allowedTypes = ['image/jpeg', 'image/png'];
 
             if (!allowedTypes.includes(file.type)) {
@@ -914,6 +919,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.addEventListener('keydown', (e) => {
             if (!DOMElements.gameScreen.classList.contains('active')) return;
             
+            if (!state.activeGameSessionId) return;
+
             const code = e.code;
             const isShift = e.shiftKey;
 
