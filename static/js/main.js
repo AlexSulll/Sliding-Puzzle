@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clearForms: () => { document.querySelectorAll('#auth-screen form').forEach(form => form.reset()); auth.hideError(); },
         handleLogin: async (event) => { event.preventDefault(); auth.hideError(); const username = document.getElementById('login-username').value.trim(); const password = document.getElementById('login-password').value; if (!username || !password) { auth.showError('Пожалуйста, заполните все поля'); return; } const loginBtn = document.getElementById('login-btn'); const originalText = loginBtn.innerHTML; loginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Вход...'; loginBtn.disabled = true; try { const response = await api.login(username, auth.hashPassword(password)); if (response && response.success) { auth.onLoginSuccess(response.user); } else { auth.showError(response?.message || 'Неверное имя пользователя или пароль'); } } catch (error) { auth.showError('Ошибка соединения. Попробуйте позже.'); } finally { loginBtn.innerHTML = originalText; loginBtn.disabled = false; } },
         handleRegister: async (event) => { event.preventDefault(); auth.hideError(); const username = document.getElementById('register-username').value.trim(); const password = document.getElementById('register-password').value; const usernameValidation = auth.validateUsername(username); if (!usernameValidation.isValid) { auth.showError(usernameValidation.message); return; } if (!password) { auth.showError('Пожалуйста, введите пароль'); return; } if (password.length < 8) { auth.showError('Пароль должен содержать минимум 8 символов'); return; } const registerBtn = document.getElementById('register-btn'); const originalText = registerBtn.innerHTML; registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Регистрация...'; registerBtn.disabled = true; try { const response = await api.register(username, auth.hashPassword(password)); if (response && response.success) { auth.onLoginSuccess(response.user); } else { auth.showError(response?.message || 'Ошибка регистрации. Возможно, имя пользователя уже занято.'); } } catch (error) { auth.showError('Ошибка соединения. Попробуйте позже.'); } finally { registerBtn.innerHTML = originalText; registerBtn.disabled = false; } },
-        handleLogout: async () => { await api.logout(); state.currentUser = null; ui.updateLoginState(); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); auth.clearForms(); auth.hideError(); },
+        handleLogout: async () => { await api.logout(); state.currentUser = null; state.activeGameSessionId = null; timer.stop(); ui.updateLoginState(); DOMElements.loginView.classList.remove('hidden'); DOMElements.registerView.classList.add('hidden'); ui.showScreen('auth'); auth.clearForms(); auth.hideError(); },
         onLoginSuccess: async (userData, activeGameId = null) => {
             state.currentUser = userData;
             state.activeGameSessionId = activeGameId;
@@ -238,6 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
         restart: async () => { 
             const gameState = await api.performAction('restart', {}, 'Перезапуск игры...');
             if (gameState) { 
+                if (gameState.sessionId) state.activeGameSessionId = gameState.sessionId;
                 timer.stop(); 
                 ui.render(gameState); 
                 timer.start(gameState.timeRemaining); 
@@ -246,6 +247,14 @@ document.addEventListener('DOMContentLoaded', () => {
         resume: async (gameId) => {
             const gameState = await api.performAction('resume_game', { gameId: gameId }, 'Загрузка игры...');
             
+            if (!gameState) {
+                console.warn("Сессия игры не найдена на сервере. Сброс состояния.");
+                state.activeGameSessionId = null;
+                state.currentReplayId = null;
+                ui.showScreen('settings');
+                return;
+            }
+
             if (gameState && gameState.imageMissing) {
                 state.currentReplayId = null; 
 
@@ -868,7 +877,9 @@ document.addEventListener('DOMContentLoaded', () => {
         DOMElements.modeRadios.forEach(radio => radio.addEventListener('change', (e) => {
             state.gameMode = e.target.value;
             DOMElements.imageSelection.classList.toggle('hidden', state.gameMode !== 'IMAGE');
-            if (state.gameMode === 'INTS') {
+            if (state.gameMode === 'IMAGE') {
+                ui.loadImages();
+            } else {
                 state.imageUrl = null;
                 state.imageId = null;
                 document.querySelectorAll('.preview-img.selected').forEach(img => img.classList.remove('selected'));
@@ -894,6 +905,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const replayButton = event.target.closest('.replay-btn');
             
             if (replayButton) {
+                if (state.activeGameSessionId) {
+                    const confirmReplay = confirm('У вас есть незавершенная игра. Вы уверены, что хотите закончить её и переиграть выбранную партию?');
+                    if (!confirmReplay) {
+                        return;
+                    }
+                }
                 const gameId = replayButton.dataset.gameId;
                 if (gameId) {
                     const imageId = replayButton.dataset.imageId || null;
